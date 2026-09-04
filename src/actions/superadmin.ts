@@ -5,6 +5,13 @@ import bcrypt from 'bcryptjs';
 import { platformPrisma } from '@/lib/prisma-core';
 import { getSuperAdminSession } from '@/lib/auth';
 
+const DEFAULT_ROLE_PERMISSIONS: Record<string, Array<[string, string]>> = {
+  OWNER: ['dashboard','properties','garages','leases','collections','renters','contacts','settings','audit']
+    .flatMap((module) => ['read','create','update','delete','export','manage'].map((action) => [module, action] as [string, string])),
+  AGENT: ['dashboard','properties','renters','contacts']
+    .flatMap((module) => ['read','create','update'].map((action) => [module, action] as [string, string])),
+};
+
 export async function getTenantsAction() {
   const session = await getSuperAdminSession();
   if (!session) throw new Error('Acceso no autorizado al plano de plataforma.');
@@ -12,44 +19,33 @@ export async function getTenantsAction() {
   const tenants = await platformPrisma.tenant.findMany({
     include: {
       domains: true,
-      subscriptions: {
-        include: { plan: true },
-        take: 1,
-        orderBy: { createdAt: 'desc' },
-      },
+      subscriptions: { include: { plan: true }, take: 1, orderBy: { createdAt: 'desc' } },
       _count: {
-        select: {
-          properties: true,
-          garages: true,
-          propertyLeases: true,
-          garageLeases: true,
-          renters: true,
-          users: true,
-        },
+        select: { properties: true, garages: true, propertyLeases: true, garageLeases: true, renters: true, users: true },
       },
     },
     orderBy: { createdAt: 'desc' },
   });
 
-  return tenants.map((t) => {
-    const sub = t.subscriptions[0];
+  return tenants.map((tenant) => {
+    const subscription = tenant.subscriptions[0];
     return {
-      id: t.id,
-      slug: t.slug,
-      name: t.name,
-      status: t.status,
-      domains: t.domains.map((d) => d.hostname),
-      planName: sub?.plan.name || 'Sin plan asignado',
-      planStatus: sub?.status || 'INACTIVE',
-      periodEnd: sub?.currentPeriodEnd || null,
-      createdAt: t.createdAt,
+      id: tenant.id,
+      slug: tenant.slug,
+      name: tenant.name,
+      status: tenant.status,
+      domains: tenant.domains.map((domain) => domain.hostname),
+      planName: subscription?.plan.name || 'Sin plan asignado',
+      planStatus: subscription?.status || 'INACTIVE',
+      periodEnd: subscription?.currentPeriodEnd || null,
+      createdAt: tenant.createdAt,
       stats: {
-        properties: t._count.properties,
-        garages: t._count.garages,
-        propertyLeases: t._count.propertyLeases,
-        garageLeases: t._count.garageLeases,
-        renters: t._count.renters,
-        users: t._count.users,
+        properties: tenant._count.properties,
+        garages: tenant._count.garages,
+        propertyLeases: tenant._count.propertyLeases,
+        garageLeases: tenant._count.garageLeases,
+        renters: tenant._count.renters,
+        users: tenant._count.users,
       },
     };
   });
@@ -64,63 +60,92 @@ export async function createTenantAction(data: {
   planCode?: string;
 }) {
   const session = await getSuperAdminSession();
-  if (!session) throw new Error('Acceso no autorizado.');
+  if (!session || session.role !== 'SUPERADMIN') throw new Error('Acceso no autorizado.');
 
   const cleanSlug = data.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+  if (cleanSlug.length < 2) throw new Error('El slug debe tener al menos 2 caracteres.');
+  if (!data.name.trim()) throw new Error('El nombre de la inmobiliaria es obligatorio.');
+  if (!data.adminEmail.trim()) throw new Error('El email administrador es obligatorio.');
+  if (!data.adminPassword || data.adminPassword.length < 12) {
+    throw new Error('La contraseña inicial debe tener al menos 12 caracteres.');
+  }
 
-  const existing = await platformPrisma.tenant.findUnique({
-    where: { slug: cleanSlug },
-  });
+  const existing = await platformPrisma.tenant.findUnique({ where: { slug: cleanSlug } });
   if (existing) throw new Error(`El slug "${cleanSlug}" ya está registrado.`);
 
-  // 1. Crear tenant
-  const tenant = await platformPrisma.tenant.create({
-    data: {
-      slug: cleanSlug,
-      name: data.name.trim(),
-      status: 'ACTIVE',
-    },
-  });
+  const baseDomain = process.env.TENANT_BASE_DOMAIN;
+  if (!baseDomain) throw new Error('TENANT_BASE_DOMAIN no está configurado.');
 
-  // 2. Crear subdominio por defecto
-  const baseDomain = process.env.TENANT_BASE_DOMAIN || 'nanoapps.ar';
-  await platformPrisma.tenantDomain.create({
-    data: {
-      tenantId: tenant.id,
-      hostname: `${cleanSlug}.${baseDomain}`,
-      isPrimary: true,
-      verifiedAt: new Date(),
-    },
-  });
+  const passwordHash = await bcrypt.hash(data.adminPassword, 12);
+  const plan = await platformPrisma.plan.findFirst({ where: { code: data.planCode || 'INMOBILIARIA_PRO', isActive: true } });
+  if (!plan) throw new Error('El plan solicitado no existe o está inactivo.');
 
-  // 3. Crear usuario admin del tenant
-  const passwordHash = await bcrypt.hash(data.adminPassword || 'Admin2026!', 10);
-  await platformPrisma.user.create({
-    data: {
-      tenantId: tenant.id,
-      email: data.adminEmail.trim().toLowerCase(),
-      name: data.adminName.trim(),
-      passwordHash,
-      role: 'ADMIN',
-      isActive: true,
-    },
-  });
+  const tenant = await platformPrisma.$transaction(async (tx) => {
+    const created = await tx.tenant.create({
+      data: { slug: cleanSlug, name: data.name.trim(), status: 'ACTIVE' },
+    });
 
-  // 4. Asignar plan
-  const plan = await platformPrisma.plan.findFirst({
-    where: { code: data.planCode || 'INMOBILIARIA_PRO' },
-  });
-  if (plan) {
-    await platformPrisma.tenantSubscription.create({
+    await tx.tenantDomain.create({
       data: {
-        tenantId: tenant.id,
+        tenantId: created.id,
+        hostname: `${cleanSlug}.${baseDomain}`,
+        isPrimary: true,
+        verifiedAt: new Date(),
+      },
+    });
+
+    const ownerRole = await tx.roleProfile.create({
+      data: {
+        tenantId: created.id,
+        key: 'OWNER',
+        name: 'Propietario / Administrador',
+        description: 'Acceso total a la inmobiliaria',
+        isSystem: true,
+      },
+    });
+
+    await tx.rolePermission.createMany({
+      data: DEFAULT_ROLE_PERMISSIONS.OWNER.map(([module, action]) => ({ roleId: ownerRole.id, module, action })),
+    });
+
+    const agentRole = await tx.roleProfile.create({
+      data: {
+        tenantId: created.id,
+        key: 'AGENT',
+        name: 'Agente',
+        description: 'Gestión comercial y de propiedades',
+        isSystem: true,
+      },
+    });
+
+    await tx.rolePermission.createMany({
+      data: DEFAULT_ROLE_PERMISSIONS.AGENT.map(([module, action]) => ({ roleId: agentRole.id, module, action })),
+    });
+
+    await tx.user.create({
+      data: {
+        tenantId: created.id,
+        roleProfileId: ownerRole.id,
+        email: data.adminEmail.trim().toLowerCase(),
+        name: data.adminName.trim(),
+        passwordHash,
+        role: 'ADMIN',
+        isActive: true,
+      },
+    });
+
+    await tx.tenantSubscription.create({
+      data: {
+        tenantId: created.id,
         planId: plan.id,
         status: 'ACTIVE',
         currentPeriodStart: new Date(),
         currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
     });
-  }
+
+    return created;
+  });
 
   revalidatePath('/superadmin');
   return { success: true, tenantId: tenant.id };
@@ -128,11 +153,11 @@ export async function createTenantAction(data: {
 
 export async function toggleTenantStatusAction(tenantId: string, status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED') {
   const session = await getSuperAdminSession();
-  if (!session) throw new Error('Acceso no autorizado.');
+  if (!session || session.role !== 'SUPERADMIN') throw new Error('Acceso no autorizado.');
 
   await platformPrisma.tenant.update({
     where: { id: tenantId },
-    data: { status },
+    data: { status, archivedAt: status === 'ARCHIVED' ? new Date() : null },
   });
 
   revalidatePath('/superadmin');
