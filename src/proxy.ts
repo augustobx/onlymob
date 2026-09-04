@@ -14,16 +14,8 @@ const tenantAdminPrefixes = [
   '/ajustes',
 ];
 
-function normalizeHostname(host: string | null) {
-  if (!host) return '';
-  return host.split(':')[0].trim().toLowerCase();
-}
-
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const host = normalizeHostname(
-    request.headers.get('x-forwarded-host') || request.headers.get('host')
-  );
 
   if (tenantAdminPrefixes.some((prefix) => pathname.startsWith(prefix))) {
     const adminSession = request.cookies.get('onlymob_admin_session');
@@ -46,18 +38,22 @@ export default function proxy(request: NextRequest) {
     }
   }
 
-  const requestHeaders = new Headers(request.headers);
-  if (host) requestHeaders.set('x-tenant-host', host);
-
-  return NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
-  });
+  return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/admin/:path*',
+    '/dashboard/:path*',
+    '/propiedades/:path*',
+    '/contactos/:path*',
+    '/cocheras/:path*',
+    '/contratos/:path*',
+    '/cobranzas/:path*',
+    '/inquilinos/:path*',
+    '/recibos/:path*',
+    '/ajustes/:path*',
+    '/superadmin/:path*',
+    '/portal/:path*',
   ],
 };
