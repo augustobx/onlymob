@@ -1,49 +1,29 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getTenantPrisma, platformPrisma } from '@/lib/prisma';
-import { resolveTenantContext } from '@/lib/tenant-context';
+import { platformPrisma } from '@/lib/prisma-core';
 import { numberToWords } from '@/lib/number-to-words';
+import { auditTenantAction, requireTenantAdmin } from '@/lib/tenant-guard';
 
 export async function getDebtsAction(filters?: {
   status?: string;
   type?: string;
   renterId?: string;
 }) {
-  const tenant = await resolveTenantContext();
-  const prisma = await getTenantPrisma();
-
+  const { tenant } = await requireTenantAdmin();
   const where: any = { tenantId: tenant.id };
 
-  if (filters?.status && filters.status !== 'ALL') {
-    where.status = filters.status;
-  }
+  if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
+  if (filters?.type && filters.type !== 'ALL') where.type = filters.type;
+  if (filters?.renterId) where.renterId = filters.renterId;
 
-  if (filters?.type && filters.type !== 'ALL') {
-    where.type = filters.type;
-  }
-
-  if (filters?.renterId) {
-    where.renterId = filters.renterId;
-  }
-
-  const debts = await prisma.debt.findMany({
+  const debts = await platformPrisma.debt.findMany({
     where,
     include: {
       renter: true,
-      propertyLease: {
-        include: { property: true },
-      },
-      garageLease: {
-        include: {
-          spaces: {
-            include: { space: true },
-          },
-        },
-      },
-      payments: {
-        orderBy: { paidAt: 'desc' },
-      },
+      propertyLease: { include: { property: true } },
+      garageLease: { include: { spaces: { include: { space: true } } } },
+      payments: { orderBy: { paidAt: 'desc' } },
     },
     orderBy: { dueDate: 'asc' },
   });
@@ -58,8 +38,7 @@ export async function getDebtsAction(filters?: {
     if (d.propertyLease) {
       assetLabel = `Propiedad: ${d.propertyLease.property.code} (${d.propertyLease.property.address})`;
     } else if (d.garageLease) {
-      const sps = d.garageLease.spaces.map((s) => `#${s.space.spaceNumber}`).join(', ');
-      assetLabel = `Cochera: Plazas ${sps}`;
+      assetLabel = `Cochera: Plazas ${d.garageLease.spaces.map((s) => `#${s.space.spaceNumber}`).join(', ')}`;
     }
 
     return {
@@ -99,64 +78,74 @@ export async function recordPaymentAction(data: {
   reference?: string;
   notes?: string;
 }) {
-  const tenant = await resolveTenantContext();
+  const { tenant, session } = await requireTenantAdmin();
+  if (!Number.isFinite(data.amount) || data.amount <= 0) throw new Error('El importe debe ser mayor a cero.');
 
-  const debt = await platformPrisma.debt.findFirst({
-    where: { id: data.debtId, tenantId: tenant.id },
+  const result = await platformPrisma.$transaction(async (tx) => {
+    const debt = await tx.debt.findFirst({
+      where: { id: data.debtId, tenantId: tenant.id },
+    });
+    if (!debt) throw new Error('Deuda no encontrada.');
+
+    const currentPaid = Number(debt.paidAmount);
+    const totalAmount = Number(debt.amount);
+    const remaining = Math.max(0, totalAmount - currentPaid);
+    if (data.amount > remaining + 0.01) {
+      throw new Error(`El pago ($${data.amount}) excede el saldo adeudado ($${remaining}).`);
+    }
+
+    const newPaidAmount = currentPaid + data.amount;
+    const newStatus = newPaidAmount >= totalAmount - 0.01 ? 'PAID' : 'PARTIAL';
+    const year = new Date().getFullYear();
+    const counter = await tx.tenantCounter.upsert({
+      where: { tenantId_key: { tenantId: tenant.id, key: `receipt:${year}` } },
+      create: { tenantId: tenant.id, key: `receipt:${year}`, value: 1 },
+      update: { value: { increment: 1 } },
+    });
+    const receiptNumber = `${year}-${String(counter.value).padStart(6, '0')}`;
+
+    const payment = await tx.payment.create({
+      data: {
+        tenantId: tenant.id,
+        debtId: debt.id,
+        amount: data.amount,
+        paidAt: new Date(),
+        method: data.method,
+        reference: data.reference?.trim() || null,
+        receiptNumber,
+        notes: data.notes?.trim() || null,
+      },
+    });
+
+    await tx.debt.update({
+      where: { id: debt.id },
+      data: { paidAmount: newPaidAmount, status: newStatus },
+    });
+
+    return { payment, receiptNumber, debtId: debt.id };
   });
 
-  if (!debt) throw new Error('Deuda no encontrada.');
-
-  const currentPaid = Number(debt.paidAmount);
-  const totalAmount = Number(debt.amount);
-  const remaining = totalAmount - currentPaid;
-
-  if (data.amount <= 0) {
-    throw new Error('El importe debe ser mayor a cero.');
-  }
-
-  if (data.amount > remaining + 0.01) {
-    throw new Error(`El pago ($${data.amount}) excede el saldo adeudado ($${remaining}).`);
-  }
-
-  const newPaidAmount = currentPaid + data.amount;
-  const newStatus = newPaidAmount >= totalAmount - 0.01 ? 'PAID' : 'PARTIAL';
-
-  // Generar número de recibo correlativo basado en timestamp y contador
-  const count = await platformPrisma.payment.count({ where: { tenantId: tenant.id } });
-  const year = new Date().getFullYear();
-  const receiptNumber = `${year}-${String(count + 1).padStart(5, '0')}`;
-
-  // 1. Crear pago
-  const payment = await platformPrisma.payment.create({
-    data: {
-      tenantId: tenant.id,
-      debtId: debt.id,
+  await auditTenantAction({
+    tenantId: tenant.id,
+    actorUserId: session.userId,
+    action: 'PAYMENT_RECORDED',
+    entityType: 'Payment',
+    entityId: result.payment.id,
+    metadata: {
+      debtId: result.debtId,
       amount: data.amount,
-      paidAt: new Date(),
       method: data.method,
-      reference: data.reference,
-      receiptNumber,
-      notes: data.notes,
-    },
-  });
-
-  // 2. Actualizar deuda
-  await platformPrisma.debt.update({
-    where: { id: debt.id },
-    data: {
-      paidAmount: newPaidAmount,
-      status: newStatus,
+      receiptNumber: result.receiptNumber,
     },
   });
 
   revalidatePath('/cobranzas');
   revalidatePath('/dashboard');
-  return { success: true, paymentId: payment.id, receiptNumber };
+  return { success: true, paymentId: result.payment.id, receiptNumber: result.receiptNumber };
 }
 
 export async function getReceiptDetailsAction(paymentId: string) {
-  const tenant = await resolveTenantContext();
+  const { tenant } = await requireTenantAdmin();
 
   const payment = await platformPrisma.payment.findFirst({
     where: { id: paymentId, tenantId: tenant.id },
@@ -166,9 +155,7 @@ export async function getReceiptDetailsAction(paymentId: string) {
           renter: true,
           propertyLease: { include: { property: true } },
           garageLease: {
-            include: {
-              spaces: { include: { space: { include: { garage: true } } } },
-            },
+            include: { spaces: { include: { space: { include: { garage: true } } } } },
           },
         },
       },
@@ -178,8 +165,6 @@ export async function getReceiptDetailsAction(paymentId: string) {
   if (!payment) throw new Error('Pago no encontrado.');
 
   const amount = Number(payment.amount);
-  const amountWords = numberToWords(amount);
-
   let conceptDetails = payment.debt.description;
   let assetAddress = tenant.address || 'Inmueble administrado';
 
@@ -187,16 +172,16 @@ export async function getReceiptDetailsAction(paymentId: string) {
     assetAddress = payment.debt.propertyLease.property.address;
     conceptDetails += ` - Propiedad: ${payment.debt.propertyLease.property.code}`;
   } else if (payment.debt.garageLease) {
-    const sps = payment.debt.garageLease.spaces.map((s) => s.space.spaceNumber).join(', ');
+    const spaces = payment.debt.garageLease.spaces.map((s) => s.space.spaceNumber).join(', ');
     assetAddress = payment.debt.garageLease.spaces[0]?.space.garage.address || 'Cochera';
-    conceptDetails += ` - Cocheras N° ${sps}`;
+    conceptDetails += ` - Cocheras N° ${spaces}`;
   }
 
   return {
-    receiptNumber: payment.receiptNumber || '0001-00000001',
+    receiptNumber: payment.receiptNumber || 'SIN-NUMERO',
     paymentDate: payment.paidAt,
     amount,
-    amountWords,
+    amountWords: numberToWords(amount),
     method: payment.method,
     reference: payment.reference,
     notes: payment.notes,
@@ -218,13 +203,11 @@ export async function getReceiptDetailsAction(paymentId: string) {
   };
 }
 
-// ==========================================
-// MÉTRICAS KPI PARA DASHBOARD
-// ==========================================
 export async function getDashboardMetricsAction() {
-  const tenant = await resolveTenantContext();
+  const { tenant } = await requireTenantAdmin();
   const now = new Date();
   const in10Days = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [
     propertyDebtsOverdue,
@@ -238,61 +221,17 @@ export async function getDashboardMetricsAction() {
     spacesTotal,
     paymentsThisMonth,
   ] = await Promise.all([
-    // Inmuebles vencidos
-    platformPrisma.debt.count({
-      where: {
-        tenantId: tenant.id,
-        leaseType: 'PROPERTY',
-        type: 'ALQUILER',
-        status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-        dueDate: { lt: now },
-      },
-    }),
-    // Inmuebles por vencer (próximos 10 días)
-    platformPrisma.debt.count({
-      where: {
-        tenantId: tenant.id,
-        leaseType: 'PROPERTY',
-        type: 'ALQUILER',
-        status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-        dueDate: { gte: now, lte: in10Days },
-      },
-    }),
-    // Cocheras vencidas
-    platformPrisma.debt.count({
-      where: {
-        tenantId: tenant.id,
-        leaseType: 'GARAGE',
-        type: 'ALQUILER',
-        status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-        dueDate: { lt: now },
-      },
-    }),
-    // Cocheras por vencer
-    platformPrisma.debt.count({
-      where: {
-        tenantId: tenant.id,
-        leaseType: 'GARAGE',
-        type: 'ALQUILER',
-        status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-        dueDate: { gte: now, lte: in10Days },
-      },
-    }),
-    // Ocupación propiedades
+    platformPrisma.debt.count({ where: { tenantId: tenant.id, leaseType: 'PROPERTY', type: 'ALQUILER', status: { in: ['PENDING','PARTIAL','OVERDUE'] }, dueDate: { lt: now } } }),
+    platformPrisma.debt.count({ where: { tenantId: tenant.id, leaseType: 'PROPERTY', type: 'ALQUILER', status: { in: ['PENDING','PARTIAL','OVERDUE'] }, dueDate: { gte: now, lte: in10Days } } }),
+    platformPrisma.debt.count({ where: { tenantId: tenant.id, leaseType: 'GARAGE', type: 'ALQUILER', status: { in: ['PENDING','PARTIAL','OVERDUE'] }, dueDate: { lt: now } } }),
+    platformPrisma.debt.count({ where: { tenantId: tenant.id, leaseType: 'GARAGE', type: 'ALQUILER', status: { in: ['PENDING','PARTIAL','OVERDUE'] }, dueDate: { gte: now, lte: in10Days } } }),
     platformPrisma.property.count({ where: { tenantId: tenant.id, status: 'ALQUILADO' } }),
-    platformPrisma.property.count({ where: { tenantId: tenant.id } }),
-    // Cocheras
+    platformPrisma.property.count({ where: { tenantId: tenant.id, status: { not: 'ARCHIVADO' } } }),
     platformPrisma.garage.count({ where: { tenantId: tenant.id } }),
     platformPrisma.garageSpace.count({ where: { garage: { tenantId: tenant.id }, status: 'OCCUPIED' } }),
     platformPrisma.garageSpace.count({ where: { garage: { tenantId: tenant.id } } }),
-    // Cobranzas este mes
     platformPrisma.payment.findMany({
-      where: {
-        tenantId: tenant.id,
-        paidAt: {
-          gte: new Date(now.getFullYear(), now.getMonth(), 1),
-        },
-      },
+      where: { tenantId: tenant.id, paidAt: { gte: startOfMonth } },
       select: { amount: true },
     }),
   ]);
