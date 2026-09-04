@@ -13,6 +13,10 @@ import {
   ContactRound,
   Settings,
   LogOut,
+  KanbanSquare,
+  CalendarDays,
+  Handshake,
+  Landmark,
 } from 'lucide-react';
 import { logoutAdminAction } from '@/actions/auth-actions';
 
@@ -23,12 +27,16 @@ interface SidebarProps {
 
 const navItems = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'CRM', href: '/crm', icon: KanbanSquare },
+  { name: 'Agenda', href: '/agenda', icon: CalendarDays },
   { name: 'Propiedades', href: '/propiedades', icon: Home },
+  { name: 'Operaciones', href: '/operaciones', icon: Handshake },
   { name: 'Contactos', href: '/contactos', icon: ContactRound },
   { name: 'Inquilinos', href: '/inquilinos', icon: Users },
   { name: 'Cocheras', href: '/cocheras', icon: Warehouse },
   { name: 'Contratos', href: '/contratos', icon: FileText },
   { name: 'Cobranzas & Pagos', href: '/cobranzas', icon: CreditCard },
+  { name: 'Administración', href: '/administracion', icon: Landmark },
   { name: 'Configuraciones', href: '/ajustes', icon: Settings },
 ];
 
@@ -47,7 +55,7 @@ export function Sidebar({ tenantName, userName }: SidebarProps) {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
