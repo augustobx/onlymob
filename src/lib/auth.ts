@@ -1,24 +1,31 @@
 import 'server-only';
 
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { platformPrisma } from '@/lib/prisma-core';
 import { resolveTenantContext } from '@/lib/tenant-context';
 
-const AUTH_SECRET = process.env.AUTH_SECRET || 'nano_auth_secret_key_onlymob_saas_default';
 export const ADMIN_COOKIE_NAME = 'onlymob_admin_session';
 export const RENTER_COOKIE_NAME = 'onlymob_renter_session';
 export const SUPERADMIN_COOKIE_NAME = 'onlymob_superadmin_session';
 
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 
-// ==========================================
-// CRYPTO HELPERS
-// ==========================================
+function getAuthSecret() {
+  const secret = process.env.AUTH_SECRET;
+  if (secret && secret.length >= 32) return secret;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_SECRET must be configured with at least 32 characters in production.');
+  }
+
+  return secret || 'onlymob-development-secret-not-for-production';
+}
+
 function signToken(payload: object): string {
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const sig = createHmac('sha256', AUTH_SECRET).update(data).digest('base64url');
+  const sig = createHmac('sha256', getAuthSecret()).update(data).digest('base64url');
   return `${data}.${sig}`;
 }
 
@@ -26,8 +33,12 @@ function verifyToken<T>(token: string): T | null {
   try {
     const [data, sig] = token.split('.');
     if (!data || !sig) return null;
-    const expectedSig = createHmac('sha256', AUTH_SECRET).update(data).digest('base64url');
-    if (sig !== expectedSig) return null;
+
+    const expectedSig = createHmac('sha256', getAuthSecret()).update(data).digest('base64url');
+    const received = Buffer.from(sig);
+    const expected = Buffer.from(expectedSig);
+    if (received.length !== expected.length || !timingSafeEqual(received, expected)) return null;
+
     const parsed = JSON.parse(Buffer.from(data, 'base64url').toString('utf-8'));
     if (parsed.exp && parsed.exp < Date.now() / 1000) return null;
     return parsed as T;
@@ -37,16 +48,13 @@ function verifyToken<T>(token: string): T | null {
 }
 
 export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10);
+  return bcrypt.hash(password, 12);
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
 }
 
-// ==========================================
-// ADMIN / STAFF SESSIONS
-// ==========================================
 export type AdminSession = {
   userId: string;
   tenantId: string;
@@ -56,7 +64,13 @@ export type AdminSession = {
   exp: number;
 };
 
-export async function createAdminSession(user: { id: string; email: string; name: string; role: 'ADMIN' | 'STAFF'; tenantId: string }) {
+export async function createAdminSession(user: {
+  id: string;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'STAFF';
+  tenantId: string;
+}) {
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
   const token = signToken({
     userId: user.id,
@@ -77,23 +91,26 @@ export async function createAdminSession(user: { id: string; email: string; name
   });
 }
 
-export async function getAdminSession(): Promise<AdminSession | null> {
+export async function getAdminSession(expectedTenantId?: string): Promise<AdminSession | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
   if (!token) return null;
 
   const session = verifyToken<AdminSession>(token);
   if (!session) return null;
+  if (expectedTenantId && session.tenantId !== expectedTenantId) return null;
 
-  // Validate user still exists and active in DB
-  const user = await platformPrisma.user.findUnique({
-    where: { id: session.userId },
+  const user = await platformPrisma.user.findFirst({
+    where: {
+      id: session.userId,
+      tenantId: session.tenantId,
+      isActive: true,
+    },
     include: { tenant: true },
   });
 
-  if (!user || !user.isActive || user.tenant.status !== 'ACTIVE') {
-    return null;
-  }
+  if (!user || user.tenant.status !== 'ACTIVE') return null;
+  if (user.email !== session.email || user.role !== session.role) return null;
 
   return session;
 }
@@ -103,9 +120,6 @@ export async function clearAdminSession() {
   cookieStore.delete(ADMIN_COOKIE_NAME);
 }
 
-// ==========================================
-// RENTER / INQUILINO SESSIONS (PWA)
-// ==========================================
 export type RenterSession = {
   renterId: string;
   tenantId: string;
@@ -114,8 +128,14 @@ export type RenterSession = {
   exp: number;
 };
 
-export async function createRenterSession(renter: { id: string; tenantId: string; dni: string; firstName: string; lastName: string }) {
-  const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS * 4; // 30 days
+export async function createRenterSession(renter: {
+  id: string;
+  tenantId: string;
+  dni: string;
+  firstName: string;
+  lastName: string;
+}) {
+  const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS * 4;
   const token = signToken({
     renterId: renter.id,
     tenantId: renter.tenantId,
@@ -134,7 +154,7 @@ export async function createRenterSession(renter: { id: string; tenantId: string
   });
 }
 
-export async function getRenterSession(): Promise<RenterSession | null> {
+export async function getRenterSession(expectedTenantId?: string): Promise<RenterSession | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(RENTER_COOKIE_NAME)?.value;
   if (!token) return null;
@@ -142,15 +162,26 @@ export async function getRenterSession(): Promise<RenterSession | null> {
   const session = verifyToken<RenterSession>(token);
   if (!session) return null;
 
-  const renter = await platformPrisma.propertyRenter.findUnique({
-    where: { id: session.renterId },
+  let tenantId = expectedTenantId;
+  if (!tenantId) {
+    try {
+      tenantId = (await resolveTenantContext()).id;
+    } catch {
+      return null;
+    }
+  }
+  if (session.tenantId !== tenantId) return null;
+
+  const renter = await platformPrisma.propertyRenter.findFirst({
+    where: {
+      id: session.renterId,
+      tenantId,
+      status: 'ACTIVE',
+    },
     include: { tenant: true },
   });
 
-  if (!renter || renter.status !== 'ACTIVE' || renter.tenant.status !== 'ACTIVE') {
-    return null;
-  }
-
+  if (!renter || renter.tenant.status !== 'ACTIVE' || renter.dni !== session.dni) return null;
   return session;
 }
 
@@ -159,9 +190,6 @@ export async function clearRenterSession() {
   cookieStore.delete(RENTER_COOKIE_NAME);
 }
 
-// ==========================================
-// SUPERADMIN (PLATFORM) SESSIONS
-// ==========================================
 export type SuperAdminSession = {
   superAdminId: string;
   email: string;
@@ -170,7 +198,12 @@ export type SuperAdminSession = {
   exp: number;
 };
 
-export async function createSuperAdminSession(admin: { id: string; email: string; name: string; role: 'SUPERADMIN' | 'SUPPORT' }) {
+export async function createSuperAdminSession(admin: {
+  id: string;
+  email: string;
+  name: string;
+  role: 'SUPERADMIN' | 'SUPPORT';
+}) {
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
   const token = signToken({
     superAdminId: admin.id,
@@ -202,7 +235,7 @@ export async function getSuperAdminSession(): Promise<SuperAdminSession | null> 
     where: { id: session.superAdminId },
   });
 
-  if (!superadmin) return null;
+  if (!superadmin || superadmin.email !== session.email || superadmin.role !== session.role) return null;
   return session;
 }
 

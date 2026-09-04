@@ -9,7 +9,7 @@ export default async function TenantAdminLayout({
   children: React.ReactNode;
 }) {
   const tenant = await resolveTenantContext();
-  const session = await getAdminSession();
+  const session = await getAdminSession(tenant.id);
 
   if (!session) {
     redirect('/login');

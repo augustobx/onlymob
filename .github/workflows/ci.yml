@@ -1,0 +1,105 @@
+name: OnlyMob CI
+
+on:
+  push:
+    branches:
+      - main
+      - feat/**
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mariadb:
+        image: mariadb:10.11.19
+        env:
+          MARIADB_ROOT_PASSWORD: root_ci_password
+          MARIADB_DATABASE: onlymob_ci
+          MARIADB_USER: onlymob
+          MARIADB_PASSWORD: onlymob_ci_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      MYSQL_DATABASE: onlymob_ci
+      MYSQL_USER: onlymob
+      MYSQL_PASSWORD: onlymob_ci_password
+      MYSQL_ROOT_PASSWORD: root_ci_password
+      DATABASE_URL: mysql://onlymob:onlymob_ci_password@127.0.0.1:3306/onlymob_ci
+      PLATFORM_HOST: onlymob.localhost
+      TENANT_BASE_DOMAIN: localhost
+      NEXT_PUBLIC_APP_URL: http://onlymob.localhost:3000
+      AUTH_SECRET: ci-onlymob-auth-secret-32-characters-minimum
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      SUPERADMIN_EMAIL: ci-superadmin@example.com
+      SUPERADMIN_PASSWORD: CI-SuperAdmin-Password-2026!
+      SUPERADMIN_NAME: CI SuperAdmin
+      RUN_LEGACY_MIGRATION: "false"
+      TZ: America/Argentina/Buenos_Aires
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install MariaDB client
+        run: sudo apt-get update && sudo apt-get install -y mariadb-client
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Bootstrap clean database through production migration entrypoint
+        run: sh scripts/deploy-migrate.sh
+
+      - name: Verify migration idempotency
+        run: sh scripts/deploy-migrate.sh
+
+      - name: Simulate existing pre-Prisma database
+        run: |
+          MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mariadb -h 127.0.0.1 -u root -e "CREATE DATABASE onlymob_existing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON onlymob_existing.* TO 'onlymob'@'%'; FLUSH PRIVILEGES;"
+          MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing < prisma/migrations/20260904190000_baseline/migration.sql
+
+      - name: Upgrade existing database without recreating baseline
+        env:
+          MYSQL_DATABASE: onlymob_existing
+          DATABASE_URL: mysql://onlymob:onlymob_ci_password@127.0.0.1:3306/onlymob_existing
+          SUPERADMIN_EMAIL: ""
+          SUPERADMIN_PASSWORD: ""
+        run: |
+          sh scripts/deploy-migrate.sh
+          TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='onlymob_existing' AND table_name IN ('Contact','PropertyOwner','AuditLog','RoleProfile','TenantCounter');")
+          test "$TABLES" = "5"
+          BASELINE=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM _prisma_migrations WHERE migration_name='20260904190000_baseline' AND finished_at IS NOT NULL;")
+          test "$BASELINE" = "1"
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
