@@ -359,7 +359,7 @@ model TenantFeatureOverride {
   tenantId   String
   featureKey String   @db.VarChar(80)
   enabled    Boolean
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -598,7 +598,7 @@ model Property {
   publications          Publication[]
   reservations          Reservation[]
   deals                 Deal[]
-  expenses              PropertyExpense[]
+  propertyExpenses      PropertyExpense[]
   settlementLines       OwnerSettlementLine[]
 
   @@unique([tenantId, code])
