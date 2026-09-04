@@ -1,39 +1,34 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getTenantPrisma, platformPrisma } from '@/lib/prisma';
-import { resolveTenantContext } from '@/lib/tenant-context';
+import { platformPrisma } from '@/lib/prisma-core';
+import { auditTenantAction, requireTenantAdmin } from '@/lib/tenant-guard';
+
+function parseDate(value: string, label: string) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} inválida.`);
+  return date;
+}
 
 export async function getLeasesAction() {
-  const tenant = await resolveTenantContext();
-  const prisma = await getTenantPrisma();
+  const { tenant } = await requireTenantAdmin();
 
   const [propertyLeases, garageLeases] = await Promise.all([
-    prisma.propertyLease.findMany({
+    platformPrisma.propertyLease.findMany({
       where: { tenantId: tenant.id },
       include: {
         property: true,
         renter: true,
-        debts: {
-          where: { status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] } },
-        },
+        debts: { where: { status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] } } },
       },
       orderBy: { createdAt: 'desc' },
     }),
-    prisma.garageLease.findMany({
+    platformPrisma.garageLease.findMany({
       where: { tenantId: tenant.id },
       include: {
         renter: true,
-        spaces: {
-          include: {
-            space: {
-              include: { garage: true },
-            },
-          },
-        },
-        debts: {
-          where: { status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] } },
-        },
+        spaces: { include: { space: { include: { garage: true } } } },
+        debts: { where: { status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] } } },
       },
       orderBy: { createdAt: 'desc' },
     }),
@@ -83,27 +78,53 @@ export async function createPropertyLeaseAction(data: {
   updatePeriodMonths?: number;
   notes?: string;
 }) {
-  const tenant = await resolveTenantContext();
+  const { tenant, session } = await requireTenantAdmin();
+  const startDate = parseDate(data.startDate, 'Fecha de inicio');
+  const endDate = parseDate(data.endDate, 'Fecha de finalización');
+  if (endDate <= startDate) throw new Error('La fecha de finalización debe ser posterior al inicio.');
+  if (!Number.isFinite(data.rent) || data.rent <= 0) throw new Error('El alquiler debe ser mayor a cero.');
 
-  const lease = await platformPrisma.propertyLease.create({
-    data: {
-      tenantId: tenant.id,
-      propertyId: data.propertyId,
-      renterId: data.renterId,
-      startDate: new Date(data.startDate),
-      endDate: new Date(data.endDate),
-      currentRent: data.rent,
-      deposit: data.deposit || 0,
-      updatePeriodMonths: data.updatePeriodMonths || 4,
-      status: 'CURRENT',
-      notes: data.notes,
-    },
+  const lease = await platformPrisma.$transaction(async (tx) => {
+    const [property, renter, activeLease] = await Promise.all([
+      tx.property.findFirst({ where: { id: data.propertyId, tenantId: tenant.id, status: { not: 'ARCHIVADO' } } }),
+      tx.propertyRenter.findFirst({ where: { id: data.renterId, tenantId: tenant.id, status: 'ACTIVE' } }),
+      tx.propertyLease.findFirst({ where: { tenantId: tenant.id, propertyId: data.propertyId, status: 'CURRENT' } }),
+    ]);
+
+    if (!property) throw new Error('Propiedad no encontrada para esta inmobiliaria.');
+    if (!renter) throw new Error('Inquilino no encontrado o inactivo.');
+    if (activeLease) throw new Error('La propiedad ya tiene un contrato vigente.');
+
+    const created = await tx.propertyLease.create({
+      data: {
+        tenantId: tenant.id,
+        propertyId: property.id,
+        renterId: renter.id,
+        startDate,
+        endDate,
+        currentRent: data.rent,
+        deposit: data.deposit || 0,
+        updatePeriodMonths: data.updatePeriodMonths || 4,
+        status: 'CURRENT',
+        notes: data.notes,
+      },
+    });
+
+    await tx.property.update({
+      where: { id: property.id },
+      data: { status: 'ALQUILADO', commercialStatus: 'CLOSED' },
+    });
+
+    return created;
   });
 
-  // Marcar la propiedad como ALQUILADO
-  await platformPrisma.property.update({
-    where: { id: data.propertyId },
-    data: { status: 'ALQUILADO' },
+  await auditTenantAction({
+    tenantId: tenant.id,
+    actorUserId: session.userId,
+    action: 'PROPERTY_LEASE_CREATED',
+    entityType: 'PropertyLease',
+    entityId: lease.id,
+    metadata: { propertyId: data.propertyId, renterId: data.renterId },
   });
 
   revalidatePath('/contratos');
@@ -122,36 +143,67 @@ export async function createGarageLeaseAction(data: {
   deposit?: number;
   notes?: string;
 }) {
-  const tenant = await resolveTenantContext();
+  const { tenant, session } = await requireTenantAdmin();
+  const startDate = parseDate(data.startDate, 'Fecha de inicio');
+  const endDate = parseDate(data.endDate, 'Fecha de finalización');
+  const spaceIds = [...new Set(data.spaceIds)];
 
-  const lease = await platformPrisma.garageLease.create({
-    data: {
-      tenantId: tenant.id,
-      renterId: data.renterId,
-      startDate: new Date(data.startDate),
-      endDate: new Date(data.endDate),
-      rentPerSpace: data.rentPerSpace,
-      totalRent: data.totalRent,
-      deposit: data.deposit || 0,
-      status: 'CURRENT',
-      notes: data.notes,
-    },
-  });
+  if (endDate <= startDate) throw new Error('La fecha de finalización debe ser posterior al inicio.');
+  if (spaceIds.length === 0) throw new Error('Seleccioná al menos una plaza.');
+  if (!Number.isFinite(data.totalRent) || data.totalRent <= 0) throw new Error('El alquiler total debe ser mayor a cero.');
 
-  // Asociar plazas y marcarlas como OCCUPIED
-  for (const spaceId of data.spaceIds) {
-    await platformPrisma.garageLeaseSpace.create({
-      data: {
-        leaseId: lease.id,
-        spaceId,
+  const lease = await platformPrisma.$transaction(async (tx) => {
+    const renter = await tx.propertyRenter.findFirst({
+      where: { id: data.renterId, tenantId: tenant.id, status: 'ACTIVE' },
+    });
+    if (!renter) throw new Error('Inquilino no encontrado o inactivo.');
+
+    const spaces = await tx.garageSpace.findMany({
+      where: { id: { in: spaceIds }, garage: { tenantId: tenant.id } },
+      include: {
+        leaseSpaces: { where: { lease: { tenantId: tenant.id, status: 'CURRENT' } }, take: 1 },
       },
     });
 
-    await platformPrisma.garageSpace.update({
-      where: { id: spaceId },
+    if (spaces.length !== spaceIds.length) throw new Error('Una o más plazas no pertenecen a esta inmobiliaria.');
+    if (spaces.some((space) => space.status === 'MAINTENANCE' || space.leaseSpaces.length > 0)) {
+      throw new Error('Una o más plazas no están disponibles.');
+    }
+
+    const created = await tx.garageLease.create({
+      data: {
+        tenantId: tenant.id,
+        renterId: renter.id,
+        startDate,
+        endDate,
+        rentPerSpace: data.rentPerSpace,
+        totalRent: data.totalRent,
+        deposit: data.deposit || 0,
+        status: 'CURRENT',
+        notes: data.notes,
+      },
+    });
+
+    await tx.garageLeaseSpace.createMany({
+      data: spaceIds.map((spaceId) => ({ leaseId: created.id, spaceId })),
+    });
+
+    await tx.garageSpace.updateMany({
+      where: { id: { in: spaceIds } },
       data: { status: 'OCCUPIED' },
     });
-  }
+
+    return created;
+  });
+
+  await auditTenantAction({
+    tenantId: tenant.id,
+    actorUserId: session.userId,
+    action: 'GARAGE_LEASE_CREATED',
+    entityType: 'GarageLease',
+    entityId: lease.id,
+    metadata: { renterId: data.renterId, spaceIds },
+  });
 
   revalidatePath('/contratos');
   revalidatePath('/cocheras');
@@ -160,44 +212,41 @@ export async function createGarageLeaseAction(data: {
 }
 
 export async function terminateLeaseAction(id: string, type: 'PROPERTY' | 'GARAGE') {
-  const tenant = await resolveTenantContext();
+  const { tenant, session } = await requireTenantAdmin();
 
-  if (type === 'PROPERTY') {
-    const lease = await platformPrisma.propertyLease.findFirst({
-      where: { id, tenantId: tenant.id },
-    });
-    if (!lease) throw new Error('Contrato no encontrado.');
+  await platformPrisma.$transaction(async (tx) => {
+    if (type === 'PROPERTY') {
+      const lease = await tx.propertyLease.findFirst({ where: { id, tenantId: tenant.id, status: 'CURRENT' } });
+      if (!lease) throw new Error('Contrato vigente no encontrado.');
 
-    await platformPrisma.propertyLease.update({
-      where: { id },
-      data: { status: 'TERMINATED' },
-    });
+      await tx.propertyLease.update({ where: { id: lease.id }, data: { status: 'TERMINATED' } });
+      await tx.property.update({
+        where: { id: lease.propertyId },
+        data: { status: 'DISPONIBLE', commercialStatus: 'AVAILABLE' },
+      });
+      return;
+    }
 
-    // Liberar la propiedad
-    await platformPrisma.property.update({
-      where: { id: lease.propertyId },
-      data: { status: 'DISPONIBLE' },
-    });
-  } else {
-    const lease = await platformPrisma.garageLease.findFirst({
-      where: { id, tenantId: tenant.id },
+    const lease = await tx.garageLease.findFirst({
+      where: { id, tenantId: tenant.id, status: 'CURRENT' },
       include: { spaces: true },
     });
-    if (!lease) throw new Error('Contrato de cochera no encontrado.');
+    if (!lease) throw new Error('Contrato de cochera vigente no encontrado.');
 
-    await platformPrisma.garageLease.update({
-      where: { id },
-      data: { status: 'TERMINATED' },
+    await tx.garageLease.update({ where: { id: lease.id }, data: { status: 'TERMINATED' } });
+    await tx.garageSpace.updateMany({
+      where: { id: { in: lease.spaces.map((s) => s.spaceId) } },
+      data: { status: 'FREE' },
     });
+  });
 
-    // Liberar las plazas asignadas
-    for (const s of lease.spaces) {
-      await platformPrisma.garageSpace.update({
-        where: { id: s.spaceId },
-        data: { status: 'FREE' },
-      });
-    }
-  }
+  await auditTenantAction({
+    tenantId: tenant.id,
+    actorUserId: session.userId,
+    action: 'LEASE_TERMINATED',
+    entityType: type === 'PROPERTY' ? 'PropertyLease' : 'GarageLease',
+    entityId: id,
+  });
 
   revalidatePath('/contratos');
   revalidatePath('/propiedades');
@@ -206,35 +255,22 @@ export async function terminateLeaseAction(id: string, type: 'PROPERTY' | 'GARAG
   return { success: true };
 }
 
-// ==========================================
-// PREVIEW & APLICAR AUMENTO (IPC / ICL)
-// ==========================================
 export async function previewIncreaseAction(updatePeriodMonths: number, percent: number) {
-  const tenant = await resolveTenantContext();
+  const { tenant } = await requireTenantAdmin();
+  if (!Number.isFinite(percent) || percent < 0 || percent > 1000) throw new Error('Porcentaje inválido.');
 
-  const where: any = {
-    tenantId: tenant.id,
-    status: 'CURRENT',
-  };
-
-  if (updatePeriodMonths > 0) {
-    where.updatePeriodMonths = updatePeriodMonths;
-  }
+  const where: any = { tenantId: tenant.id, status: 'CURRENT' };
+  if (updatePeriodMonths > 0) where.updatePeriodMonths = updatePeriodMonths;
 
   const leases = await platformPrisma.propertyLease.findMany({
     where,
-    include: {
-      property: true,
-      renter: true,
-    },
+    include: { property: true, renter: true },
     orderBy: { property: { code: 'asc' } },
   });
 
   return leases.map((l) => {
     const oldRent = Number(l.currentRent);
     const newRent = Math.round(oldRent * (1 + percent / 100) * 100) / 100;
-    const diff = newRent - oldRent;
-
     return {
       leaseId: l.id,
       propertyCode: l.property.code,
@@ -242,153 +278,139 @@ export async function previewIncreaseAction(updatePeriodMonths: number, percent:
       updatePeriodMonths: l.updatePeriodMonths,
       oldRent,
       newRent,
-      diff,
+      diff: newRent - oldRent,
       percent,
     };
   });
 }
 
-export async function applyIncreaseAction(updatePeriodMonths: number, percent: number, indexUsed: string = 'ICL / Ajuste') {
-  const tenant = await resolveTenantContext();
+export async function applyIncreaseAction(updatePeriodMonths: number, percent: number, indexUsed = 'Ajuste contractual') {
+  const { tenant, session } = await requireTenantAdmin();
+  if (!Number.isFinite(percent) || percent < 0 || percent > 1000) throw new Error('Porcentaje inválido.');
 
-  const where: any = {
+  const where: any = { tenantId: tenant.id, status: 'CURRENT' };
+  if (updatePeriodMonths > 0) where.updatePeriodMonths = updatePeriodMonths;
+
+  const count = await platformPrisma.$transaction(async (tx) => {
+    const leases = await tx.propertyLease.findMany({ where });
+
+    for (const lease of leases) {
+      const oldRent = Number(lease.currentRent);
+      const newRent = Math.round(oldRent * (1 + percent / 100) * 100) / 100;
+      await tx.rentHistory.create({
+        data: {
+          propertyLeaseId: lease.id,
+          changeDate: new Date(),
+          oldRent,
+          newRent,
+          percent,
+          indexUsed: indexUsed.slice(0, 50),
+        },
+      });
+      await tx.propertyLease.update({
+        where: { id: lease.id },
+        data: { currentRent: newRent, increasePercent: 0 },
+      });
+    }
+
+    return leases.length;
+  });
+
+  await auditTenantAction({
     tenantId: tenant.id,
-    status: 'CURRENT',
-  };
-
-  if (updatePeriodMonths > 0) {
-    where.updatePeriodMonths = updatePeriodMonths;
-  }
-
-  const leases = await platformPrisma.propertyLease.findMany({ where });
-
-  for (const l of leases) {
-    const oldRent = Number(l.currentRent);
-    const newRent = Math.round(oldRent * (1 + percent / 100) * 100) / 100;
-
-    // Registrar historial inmutable
-    await platformPrisma.rentHistory.create({
-      data: {
-        propertyLeaseId: l.id,
-        changeDate: new Date(),
-        oldRent,
-        newRent,
-        percent,
-        indexUsed,
-      },
-    });
-
-    // Actualizar contrato
-    await platformPrisma.propertyLease.update({
-      where: { id: l.id },
-      data: {
-        currentRent: newRent,
-        increasePercent: 0,
-      },
-    });
-  }
+    actorUserId: session.userId,
+    action: 'LEASE_INCREASE_APPLIED',
+    entityType: 'PropertyLease',
+    metadata: { count, percent, updatePeriodMonths, indexUsed },
+  });
 
   revalidatePath('/contratos');
   revalidatePath('/propiedades');
   revalidatePath('/dashboard');
-  return { success: true, count: leases.length };
+  return { success: true, count };
 }
 
-// ==========================================
-// GENERACIÓN MASIVA DE CUOTAS MENSUALES
-// ==========================================
-export async function generateMonthlyQuotasAction(periodStr: string, dueDay: number = 10) {
-  const tenant = await resolveTenantContext();
+export async function generateMonthlyQuotasAction(periodStr: string, dueDay = 10) {
+  const { tenant, session } = await requireTenantAdmin();
+  if (!/^\d{4}-\d{2}$/.test(periodStr)) throw new Error('Período inválido.');
+  if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 28) throw new Error('El día de vencimiento debe estar entre 1 y 28.');
 
-  // periodStr viene como 'YYYY-MM', ej: '2026-09'
   const [yearStr, monthStr] = periodStr.split('-');
-  const year = parseInt(yearStr, 10);
-  const month = parseInt(monthStr, 10);
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  if (month < 1 || month > 12) throw new Error('Mes inválido.');
 
-  const dueDate = new Date(year, month - 1, dueDay);
+  const dueDate = new Date(year, month - 1, dueDay, 12, 0, 0);
+  const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const descPrefix = `Alquiler ${monthNames[month - 1]} ${year}`;
 
-  const monthNames = [
-    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-  ];
-  const monthName = monthNames[month - 1] || 'Mes';
-  const descPrefix = `Alquiler ${monthName} ${year}`;
+  const createdCount = await platformPrisma.$transaction(async (tx) => {
+    let created = 0;
+    const [propertyLeases, garageLeases] = await Promise.all([
+      tx.propertyLease.findMany({ where: { tenantId: tenant.id, status: 'CURRENT' } }),
+      tx.garageLease.findMany({
+        where: { tenantId: tenant.id, status: 'CURRENT' },
+        include: { spaces: true },
+      }),
+    ]);
 
-  let createdCount = 0;
+    for (const lease of propertyLeases) {
+      const existing = await tx.debt.findFirst({
+        where: { tenantId: tenant.id, propertyLeaseId: lease.id, type: 'ALQUILER', description: descPrefix },
+      });
+      if (!existing) {
+        await tx.debt.create({
+          data: {
+            tenantId: tenant.id,
+            leaseType: 'PROPERTY',
+            propertyLeaseId: lease.id,
+            renterId: lease.renterId,
+            type: 'ALQUILER',
+            description: descPrefix,
+            amount: lease.currentRent,
+            dueDate,
+            paidAmount: 0,
+            status: 'PENDING',
+          },
+        });
+        created++;
+      }
+    }
 
-  // 1. Contratos de Inmuebles activos
-  const propertyLeases = await platformPrisma.propertyLease.findMany({
-    where: { tenantId: tenant.id, status: 'CURRENT' },
+    for (const lease of garageLeases) {
+      const description = `${descPrefix} (${lease.spaces.length} plaza/s)`;
+      const existing = await tx.debt.findFirst({
+        where: { tenantId: tenant.id, garageLeaseId: lease.id, type: 'ALQUILER', description },
+      });
+      if (!existing) {
+        await tx.debt.create({
+          data: {
+            tenantId: tenant.id,
+            leaseType: 'GARAGE',
+            garageLeaseId: lease.id,
+            renterId: lease.renterId,
+            type: 'ALQUILER',
+            description,
+            amount: lease.totalRent,
+            dueDate,
+            paidAmount: 0,
+            status: 'PENDING',
+          },
+        });
+        created++;
+      }
+    }
+
+    return created;
   });
 
-  for (const l of propertyLeases) {
-    const description = `${descPrefix}`;
-
-    // Verificar si ya existe la cuota para este contrato y periodo (Idempotencia)
-    const existing = await platformPrisma.debt.findFirst({
-      where: {
-        tenantId: tenant.id,
-        propertyLeaseId: l.id,
-        type: 'ALQUILER',
-        description,
-      },
-    });
-
-    if (!existing) {
-      await platformPrisma.debt.create({
-        data: {
-          tenantId: tenant.id,
-          leaseType: 'PROPERTY',
-          propertyLeaseId: l.id,
-          renterId: l.renterId,
-          type: 'ALQUILER',
-          description,
-          amount: l.currentRent,
-          dueDate,
-          paidAmount: 0,
-          status: 'PENDING',
-        },
-      });
-      createdCount++;
-    }
-  }
-
-  // 2. Contratos de Cocheras activos
-  const garageLeases = await platformPrisma.garageLease.findMany({
-    where: { tenantId: tenant.id, status: 'CURRENT' },
-    include: { spaces: true },
+  await auditTenantAction({
+    tenantId: tenant.id,
+    actorUserId: session.userId,
+    action: 'MONTHLY_QUOTAS_GENERATED',
+    entityType: 'Debt',
+    metadata: { period: periodStr, dueDay, createdCount },
   });
-
-  for (const gl of garageLeases) {
-    const description = `${descPrefix} (${gl.spaces.length} plaza/s)`;
-
-    const existing = await platformPrisma.debt.findFirst({
-      where: {
-        tenantId: tenant.id,
-        garageLeaseId: gl.id,
-        type: 'ALQUILER',
-        description,
-      },
-    });
-
-    if (!existing) {
-      await platformPrisma.debt.create({
-        data: {
-          tenantId: tenant.id,
-          leaseType: 'GARAGE',
-          garageLeaseId: gl.id,
-          renterId: gl.renterId,
-          type: 'ALQUILER',
-          description,
-          amount: gl.totalRent,
-          dueDate,
-          paidAmount: 0,
-          status: 'PENDING',
-        },
-      });
-      createdCount++;
-    }
-  }
 
   revalidatePath('/cobranzas');
   revalidatePath('/contratos');
