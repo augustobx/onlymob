@@ -17,9 +17,14 @@ sql() {
 echo "==> [deploy-migrate] Verificando estado de migraciones..."
 CORE_TABLE_EXISTS="$(sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'Tenant';")"
 MIGRATION_TABLE_EXISTS="$(sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '_prisma_migrations';")"
+BASELINE_APPLIED="0"
 
-if [ "$CORE_TABLE_EXISTS" = "1" ] && [ "$MIGRATION_TABLE_EXISTS" = "0" ]; then
-  echo "==> [deploy-migrate] Base existente detectada sin historial Prisma. Registrando baseline seguro..."
+if [ "$MIGRATION_TABLE_EXISTS" = "1" ]; then
+  BASELINE_APPLIED="$(sql "SELECT COUNT(*) FROM _prisma_migrations WHERE migration_name = '$BASELINE' AND finished_at IS NOT NULL AND rolled_back_at IS NULL;")"
+fi
+
+if [ "$CORE_TABLE_EXISTS" = "1" ] && [ "$BASELINE_APPLIED" = "0" ]; then
+  echo "==> [deploy-migrate] Base pre-migraciones detectada. Registrando baseline sin alterar datos..."
   npx prisma migrate resolve --applied "$BASELINE"
 fi
 
