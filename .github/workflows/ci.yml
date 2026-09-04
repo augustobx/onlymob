@@ -1,0 +1,83 @@
+name: OnlyMob CI
+
+on:
+  push:
+    branches:
+      - main
+      - feat/**
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mariadb:
+        image: mariadb:10.11.19
+        env:
+          MARIADB_ROOT_PASSWORD: root_ci_password
+          MARIADB_DATABASE: onlymob_ci
+          MARIADB_USER: onlymob
+          MARIADB_PASSWORD: onlymob_ci_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      MYSQL_DATABASE: onlymob_ci
+      MYSQL_USER: onlymob
+      MYSQL_PASSWORD: onlymob_ci_password
+      DATABASE_URL: mysql://onlymob:onlymob_ci_password@127.0.0.1:3306/onlymob_ci
+      PLATFORM_HOST: onlymob.localhost
+      TENANT_BASE_DOMAIN: localhost
+      NEXT_PUBLIC_APP_URL: http://onlymob.localhost:3000
+      AUTH_SECRET: ci-onlymob-auth-secret-32-characters-minimum
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      SUPERADMIN_EMAIL: ci-superadmin@example.com
+      SUPERADMIN_PASSWORD: CI-SuperAdmin-Password-2026!
+      SUPERADMIN_NAME: CI SuperAdmin
+      RUN_LEGACY_MIGRATION: "false"
+      TZ: America/Argentina/Buenos_Aires
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install MariaDB client
+        run: sudo apt-get update && sudo apt-get install -y mariadb-client
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Bootstrap database through production migration entrypoint
+        run: sh scripts/deploy-migrate.sh
+
+      - name: Verify migration idempotency
+        run: sh scripts/deploy-migrate.sh
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build
+        env:
+          NODE_ENV: production
+        run: npm run build
