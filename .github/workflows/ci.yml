@@ -100,3 +100,6 @@ jobs:
         env:
           NODE_ENV: production
         run: npm run build
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
