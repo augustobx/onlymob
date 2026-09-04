@@ -64,6 +64,18 @@ export async function getTenantPrisma() {
       roleProfile: { $allOperations: scoped },
       auditLog: { $allOperations: scoped },
       tenantCounter: { $allOperations: scoped },
+      lead: { $allOperations: scoped },
+      leadInteraction: { $allOperations: scoped },
+      demand: { $allOperations: scoped },
+      leadPropertyInterest: { $allOperations: scoped },
+      task: { $allOperations: scoped },
+      calendarEvent: { $allOperations: scoped },
+      publication: { $allOperations: scoped },
+      reservation: { $allOperations: scoped },
+      deal: { $allOperations: scoped },
+      propertyExpense: { $allOperations: scoped },
+      ownerSettlement: { $allOperations: scoped },
+      recurringCharge: { $allOperations: scoped },
     },
   });
 }

@@ -18,6 +18,8 @@ export type TenantContext = {
 
 const PLATFORM_HOST = normalizeHostname(process.env.PLATFORM_HOST || 'onlymob.nanoapps.ar');
 const BASE_DOMAIN = normalizeHostname(process.env.TENANT_BASE_DOMAIN || 'nanoapps.ar');
+const POSITIVE_CACHE_TTL_MS = 30_000;
+const NEGATIVE_CACHE_TTL_MS = 2_000;
 const cache = new Map<string, { expiresAt: number; value: Promise<TenantContext | null> }>();
 
 export class TenantResolutionError extends Error {
@@ -120,12 +122,16 @@ export async function resolveTenantContext(): Promise<TenantContext> {
   }
 
   const value = findTenant(hostname);
-  cache.set(hostname, { value, expiresAt: Date.now() + 2_000 });
+  const entry = { value, expiresAt: Date.now() + NEGATIVE_CACHE_TTL_MS };
+  cache.set(hostname, entry);
+
   const tenant = await value;
   if (!tenant) {
     console.error(`[OnlyMob tenant] TENANT_NOT_FOUND host=${hostname || '<empty>'} base=${BASE_DOMAIN} platform=${PLATFORM_HOST}`);
     throw new TenantResolutionError('TENANT_NOT_FOUND');
   }
+
+  entry.expiresAt = Date.now() + POSITIVE_CACHE_TTL_MS;
   return tenant;
 }
 
