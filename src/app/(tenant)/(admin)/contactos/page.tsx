@@ -1,12 +1,18 @@
 import { Header } from '@/components/layout/header';
 import { getContactsAction } from '@/actions/contacts';
+import { getPropertiesAction } from '@/actions/properties';
 import { ContactsClient } from './contacts-client';
+import { OwnershipManager } from './ownership-manager';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ContactsPage() {
-  const contacts = await getContactsAction();
-  const serialized = contacts.map((contact) => ({
+  const [contacts, properties] = await Promise.all([
+    getContactsAction(),
+    getPropertiesAction(),
+  ]);
+
+  const serializedContacts = contacts.map((contact) => ({
     id: contact.id,
     firstName: contact.firstName,
     lastName: contact.lastName,
@@ -35,14 +41,22 @@ export default async function ContactsPage() {
     })),
   }));
 
+  const propertyOptions = properties.map((property) => ({
+    id: property.id,
+    code: property.code,
+    address: property.address,
+    owners: property.owners || [],
+  }));
+
   return (
     <div>
       <Header
         title="Contactos & Propietarios"
         subtitle="Base unificada de propietarios, prospectos, garantes y proveedores"
       />
-      <div className="p-8 max-w-7xl mx-auto">
-        <ContactsClient initialContacts={serialized} />
+      <div className="p-8 max-w-7xl mx-auto space-y-8">
+        <OwnershipManager contacts={serializedContacts} properties={propertyOptions} />
+        <ContactsClient initialContacts={serializedContacts} />
       </div>
     </div>
   );
