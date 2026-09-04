@@ -227,7 +227,7 @@ export async function savePropertyAction(data: {
 
   const property = data.id
     ? await prisma.property.update({ where: { id: data.id }, data: payload })
-    : await prisma.property.create({ data: payload });
+    : await prisma.property.create({ data: { ...payload, tenantId: tenant.id } });
 
   await auditTenantAction({
     tenantId: tenant.id,
