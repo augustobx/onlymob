@@ -23,6 +23,8 @@ const WRITE_WHERE_OPERATIONS = new Set([
   'deleteMany',
 ]);
 
+const tenantClientCache = new Map<string, any>();
+
 function tenantOperation(tenantId: string) {
   return async ({ operation, args, query }: any) => {
     args ||= {};
@@ -45,9 +47,11 @@ function tenantOperation(tenantId: string) {
 
 export async function getTenantPrisma() {
   const tenant = await resolveTenantContext();
-  const scoped = tenantOperation(tenant.id);
+  const cached = tenantClientCache.get(tenant.id);
+  if (cached) return cached;
 
-  return platformPrisma.$extends({
+  const scoped = tenantOperation(tenant.id);
+  const client = platformPrisma.$extends({
     query: {
       user: { $allOperations: scoped },
       propertyRenter: { $allOperations: scoped },
@@ -64,6 +68,21 @@ export async function getTenantPrisma() {
       roleProfile: { $allOperations: scoped },
       auditLog: { $allOperations: scoped },
       tenantCounter: { $allOperations: scoped },
+      lead: { $allOperations: scoped },
+      leadInteraction: { $allOperations: scoped },
+      demand: { $allOperations: scoped },
+      leadPropertyInterest: { $allOperations: scoped },
+      task: { $allOperations: scoped },
+      calendarEvent: { $allOperations: scoped },
+      publication: { $allOperations: scoped },
+      reservation: { $allOperations: scoped },
+      deal: { $allOperations: scoped },
+      propertyExpense: { $allOperations: scoped },
+      ownerSettlement: { $allOperations: scoped },
+      recurringCharge: { $allOperations: scoped },
     },
   });
+
+  tenantClientCache.set(tenant.id, client);
+  return client;
 }
