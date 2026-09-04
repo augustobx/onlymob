@@ -6,6 +6,8 @@ set -eu
 : "${MYSQL_USER:?MYSQL_USER is required}"
 : "${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}"
 : "${DATABASE_URL:?DATABASE_URL is required}"
+: "${PLATFORM_HOST:?PLATFORM_HOST is required}"
+: "${TENANT_BASE_DOMAIN:?TENANT_BASE_DOMAIN is required}"
 
 export MYSQL_PWD="$MYSQL_PASSWORD"
 BASELINE="20260904190000_baseline"
@@ -33,6 +35,9 @@ npx prisma migrate deploy
 
 echo "==> [deploy-migrate] Sincronizando datos de plataforma idempotentes..."
 npx tsx scripts/seed-platform.ts
+
+echo "==> [deploy-migrate] Normalizando dominios canónicos de tenants..."
+npx tsx scripts/fix-tenant-domains.ts
 
 if [ "${RUN_LEGACY_MIGRATION:-false}" = "true" ]; then
   echo "==> [deploy-migrate] RUN_LEGACY_MIGRATION=true: ejecutando importación legacy explícita..."
