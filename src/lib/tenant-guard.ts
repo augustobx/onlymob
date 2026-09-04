@@ -1,19 +1,27 @@
 import 'server-only';
 
+import { cache } from 'react';
 import { headers } from 'next/headers';
 import { getAdminSession } from '@/lib/auth';
 import { platformPrisma } from '@/lib/prisma-core';
 import { resolveTenantContext } from '@/lib/tenant-context';
 
-export async function requireTenantAdmin() {
+export const getTenantAdminContext = cache(async () => {
   const tenant = await resolveTenantContext();
   const session = await getAdminSession(tenant.id);
 
-  if (!session) {
+  if (!session) return null;
+  return { tenant, session };
+});
+
+export async function requireTenantAdmin() {
+  const context = await getTenantAdminContext();
+
+  if (!context) {
     throw new Error('UNAUTHORIZED');
   }
 
-  return { tenant, session };
+  return context;
 }
 
 export async function auditTenantAction(input: {
