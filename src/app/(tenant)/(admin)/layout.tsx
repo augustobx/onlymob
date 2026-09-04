@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
-import { resolveTenantContext } from '@/lib/tenant-context';
-import { getAdminSession } from '@/lib/auth';
+import { getTenantAdminContext } from '@/lib/tenant-guard';
 import { Sidebar } from '@/components/layout/sidebar';
 
 export default async function TenantAdminLayout({
@@ -8,12 +7,13 @@ export default async function TenantAdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const tenant = await resolveTenantContext();
-  const session = await getAdminSession(tenant.id);
+  const context = await getTenantAdminContext();
 
-  if (!session) {
+  if (!context) {
     redirect('/login');
   }
+
+  const { tenant, session } = context;
 
   return (
     <div className="flex min-h-screen bg-slate-50">
