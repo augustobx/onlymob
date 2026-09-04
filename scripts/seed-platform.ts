@@ -12,7 +12,7 @@ const SYSTEM_ROLES = [
   ['READ_ONLY', 'Solo lectura', 'Consulta sin permisos de modificación'],
 ] as const;
 
-const ALL_MODULES = ['dashboard','properties','garages','leases','collections','renters','contacts','settings','audit'];
+const ALL_MODULES = ['dashboard','crm','agenda','properties','operations','garages','leases','collections','property_management','renters','contacts','settings','audit'];
 const ALL_ACTIONS = ['read','create','update','delete','export','manage'];
 
 function permissionsFor(roleKey: string) {
@@ -21,16 +21,16 @@ function permissionsFor(roleKey: string) {
   }
   if (roleKey === 'READ_ONLY') return ALL_MODULES.map((module) => [module, 'read'] as const);
   if (roleKey === 'COLLECTIONS') {
-    return ['dashboard','collections','renters','leases'].flatMap((module) => ['read','create','update','export'].map((action) => [module, action] as const));
+    return ['dashboard','collections','property_management','renters','leases'].flatMap((module) => ['read','create','update','export'].map((action) => [module, action] as const));
   }
   if (roleKey === 'ACCOUNTING') {
-    return ['dashboard','collections','leases','properties','renters'].flatMap((module) => ['read','export'].map((action) => [module, action] as const));
+    return ['dashboard','collections','property_management','leases','properties','renters'].flatMap((module) => ['read','export'].map((action) => [module, action] as const));
   }
   if (roleKey === 'MAINTENANCE') {
-    return ['dashboard','properties','garages'].flatMap((module) => ['read','update'].map((action) => [module, action] as const));
+    return ['dashboard','properties','property_management','garages','agenda'].flatMap((module) => ['read','update'].map((action) => [module, action] as const));
   }
   if (roleKey === 'AGENT') {
-    return ['dashboard','properties','renters','contacts'].flatMap((module) => ['read','create','update'].map((action) => [module, action] as const));
+    return ['dashboard','crm','agenda','properties','operations','renters','contacts'].flatMap((module) => ['read','create','update'].map((action) => [module, action] as const));
   }
   return ALL_MODULES.flatMap((module) => ['read','create','update','export'].map((action) => [module, action] as const));
 }
@@ -70,7 +70,7 @@ async function seed() {
     },
     {
       code: 'INMOBILIARIA_PRO', name: 'Plan Profesional',
-      description: 'Gestión completa de inmuebles, cocheras, contratos y cobranzas',
+      description: 'Gestión completa de inmuebles, CRM, contratos, cobranzas y liquidaciones',
       priceMonthly: 45000, priceYearly: 450000, maxProperties: 150, maxGarages: 30, maxUsers: 5,
     },
     {
