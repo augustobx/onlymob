@@ -63,6 +63,34 @@ enum PropertyStatus {
   ARCHIVADO
 }
 
+enum PropertyOperation {
+  RENT
+  SALE
+  TEMPORARY_RENT
+  MANAGEMENT
+}
+
+enum PropertyCommercialStatus {
+  DRAFT
+  AVAILABLE
+  RESERVED
+  UNDER_NEGOTIATION
+  CLOSED
+  PAUSED
+  ARCHIVED
+}
+
+enum ContactRoleType {
+  PROSPECT
+  BUYER
+  RENTAL_PROSPECT
+  RENTER
+  OWNER
+  GUARANTOR
+  PROVIDER
+  GENERAL
+}
+
 enum SpaceStatus {
   FREE
   OCCUPIED
@@ -104,6 +132,13 @@ enum PaymentMethod {
   OTRO
 }
 
+enum AuditActorType {
+  USER
+  SUPERADMIN
+  RENTER
+  SYSTEM
+}
+
 // ==========================================
 // PLANO PLATAFORMA SAAS (SUPERADMIN)
 // ==========================================
@@ -128,6 +163,7 @@ model Tenant {
   saasPayments     SaasPayment[]
   users            User[]
   renters          PropertyRenter[]
+  contacts         Contact[]
   properties       Property[]
   garages          Garage[]
   propertyLeases   PropertyLease[]
@@ -136,6 +172,10 @@ model Tenant {
   payments         Payment[]
   documents        Document[]
   settings         TenantSetting[]
+  roleProfiles     RoleProfile[]
+  auditLogs        AuditLog[]
+  counters         TenantCounter[]
+  propertyOwners   PropertyOwner[]
 }
 
 model TenantDomain {
@@ -147,6 +187,8 @@ model TenantDomain {
   createdAt  DateTime  @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 model Plan {
@@ -179,6 +221,9 @@ model TenantSubscription {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([planId])
 }
 
 model TenantFeatureOverride {
@@ -205,6 +250,8 @@ model SaasPayment {
   createdAt   DateTime          @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, paymentDate])
 }
 
 model SuperAdminUser {
@@ -220,22 +267,103 @@ model SuperAdminUser {
 // ==========================================
 // PLANO INMOBILIARIA (TENANT SCOPED)
 // ==========================================
-
 model User {
-  id           String    @id @default(uuid())
-  tenantId     String
-  email        String    @db.VarChar(120)
-  passwordHash String    @db.VarChar(255)
-  name         String    @db.VarChar(120)
-  role         UserRole  @default(ADMIN)
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  tenantId      String
+  roleProfileId String?
+  email         String    @db.VarChar(120)
+  passwordHash  String    @db.VarChar(255)
+  name          String    @db.VarChar(120)
+  role          UserRole  @default(ADMIN)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant             Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roleProfile        RoleProfile? @relation(fields: [roleProfileId], references: [id], onDelete: SetNull)
+  assignedProperties Property[]   @relation("PropertyAgent")
+  auditLogs          AuditLog[]
 
   @@unique([tenantId, email])
+  @@index([tenantId, isActive])
+  @@index([roleProfileId])
+}
+
+model RoleProfile {
+  id          String   @id @default(uuid())
+  tenantId    String
+  key         String   @db.VarChar(50)
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users       User[]
+  permissions RolePermission[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+model RolePermission {
+  id        String   @id @default(uuid())
+  roleId    String
+  module    String   @db.VarChar(60)
+  action    String   @db.VarChar(40)
+  createdAt DateTime @default(now())
+
+  role RoleProfile @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, module, action])
+  @@index([roleId])
+}
+
+model Contact {
+  id            String   @id @default(uuid())
+  tenantId      String
+  firstName     String   @db.VarChar(80)
+  lastName      String   @db.VarChar(80)
+  companyName   String?  @db.VarChar(160)
+  documentType  String?  @db.VarChar(20)
+  documentNumber String? @db.VarChar(40)
+  cuit          String?  @db.VarChar(30)
+  email         String?  @db.VarChar(120)
+  phone         String?  @db.VarChar(50)
+  alternatePhone String? @db.VarChar(50)
+  address       String?  @db.VarChar(255)
+  city          String?  @db.VarChar(100)
+  province      String?  @db.VarChar(100)
+  postalCode    String?  @db.VarChar(20)
+  bankAlias     String?  @db.VarChar(120)
+  bankCbu       String?  @db.VarChar(40)
+  notes         String?  @db.Text
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  archivedAt    DateTime?
+
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roles          ContactRole[]
+  ownedProperties PropertyOwner[]
+
+  @@index([tenantId, lastName, firstName])
+  @@index([tenantId, email])
+  @@index([tenantId, documentNumber])
+}
+
+model ContactRole {
+  id        String          @id @default(uuid())
+  contactId String
+  role      ContactRoleType
+  createdAt DateTime        @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, role])
+  @@index([contactId])
 }
 
 model PropertyRenter {
@@ -261,28 +389,93 @@ model PropertyRenter {
 
   @@unique([tenantId, dni])
   @@index([tenantId, email])
+  @@index([tenantId, status])
 }
 
 model Property {
-  id            String         @id @default(uuid())
-  tenantId      String
-  code          String         @db.VarChar(50)
-  address       String         @db.VarChar(255)
-  type          PropertyType   @default(DEPARTAMENTO)
-  rooms         Int?
-  sqm           Decimal?       @db.Decimal(8, 2)
-  baseRent      Decimal?       @db.Decimal(12, 2)
-  expensesShare Decimal?       @db.Decimal(6, 2)
-  status        PropertyStatus @default(DISPONIBLE)
-  notes         String?        @db.Text
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                    String                   @id @default(uuid())
+  tenantId              String
+  agentId               String?
+  code                  String                   @db.VarChar(50)
+  address               String                   @db.VarChar(255)
+  type                  PropertyType             @default(DEPARTAMENTO)
+  subtype               String?                  @db.VarChar(80)
+  operation             PropertyOperation        @default(RENT)
+  commercialStatus      PropertyCommercialStatus @default(AVAILABLE)
+  rooms                 Int?
+  bedrooms              Int?
+  bathrooms             Int?
+  garageCount           Int?
+  sqm                   Decimal?                 @db.Decimal(10, 2)
+  coveredSqm            Decimal?                 @db.Decimal(10, 2)
+  semiCoveredSqm        Decimal?                 @db.Decimal(10, 2)
+  landSqm               Decimal?                 @db.Decimal(10, 2)
+  baseRent              Decimal?                 @db.Decimal(12, 2)
+  rentPrice             Decimal?                 @db.Decimal(14, 2)
+  salePrice             Decimal?                 @db.Decimal(14, 2)
+  currency              String                   @default("ARS") @db.VarChar(10)
+  expenses              Decimal?                 @db.Decimal(12, 2)
+  expensesShare         Decimal?                 @db.Decimal(6, 2)
+  commissionPercent     Decimal?                 @db.Decimal(6, 2)
+  street                String?                  @db.VarChar(160)
+  streetNumber          String?                  @db.VarChar(30)
+  floor                 String?                  @db.VarChar(20)
+  unit                  String?                  @db.VarChar(20)
+  city                  String?                  @db.VarChar(100)
+  province              String?                  @db.VarChar(100)
+  country               String                   @default("Argentina") @db.VarChar(80)
+  postalCode            String?                  @db.VarChar(20)
+  latitude              Decimal?                 @db.Decimal(10, 7)
+  longitude             Decimal?                 @db.Decimal(10, 7)
+  ageYears              Int?
+  orientation           String?                  @db.VarChar(50)
+  amenities             Json?
+  publicDescription     String?                  @db.Text
+  internalDescription   String?                  @db.Text
+  coverImageUrl         String?                  @db.VarChar(500)
+  availableFrom         DateTime?                @db.Date
+  capturedAt            DateTime?
+  captureSource         String?                  @db.VarChar(100)
+  publishedAt           DateTime?
+  status                PropertyStatus           @default(DISPONIBLE)
+  notes                 String?                  @db.Text
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  archivedAt            DateTime?
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent          User?           @relation("PropertyAgent", fields: [agentId], references: [id], onDelete: SetNull)
+  owners         PropertyOwner[]
   propertyLeases PropertyLease[]
   documents      Document[]
 
   @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([tenantId, commercialStatus])
+  @@index([tenantId, operation, type])
+  @@index([tenantId, city])
+  @@index([agentId])
+}
+
+model PropertyOwner {
+  id                  String   @id @default(uuid())
+  tenantId            String
+  propertyId          String
+  contactId           String
+  ownershipPercentage Decimal  @default(100.00) @db.Decimal(6, 2)
+  isPrimary           Boolean  @default(false)
+  settlementPreference String? @db.VarChar(120)
+  notes               String?  @db.Text
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  @@unique([propertyId, contactId])
+  @@index([tenantId, propertyId])
+  @@index([tenantId, contactId])
 }
 
 model Garage {
@@ -297,6 +490,8 @@ model Garage {
 
   tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   spaces GarageSpace[]
+
+  @@index([tenantId])
 }
 
 model GarageSpace {
@@ -312,6 +507,7 @@ model GarageSpace {
   leaseSpaces GarageLeaseSpace[]
 
   @@unique([garageId, spaceNumber])
+  @@index([garageId, status])
 }
 
 model PropertyLease {
@@ -336,6 +532,11 @@ model PropertyLease {
   rentHistory RentHistory[]
   debts       Debt[]
   documents   Document[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, endDate])
+  @@index([propertyId])
+  @@index([renterId])
 }
 
 model GarageLease {
@@ -358,6 +559,10 @@ model GarageLease {
   spaces      GarageLeaseSpace[]
   rentHistory RentHistory[]
   debts       Debt[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, endDate])
+  @@index([renterId])
 }
 
 model GarageLeaseSpace {
@@ -370,6 +575,7 @@ model GarageLeaseSpace {
   space GarageSpace @relation(fields: [spaceId], references: [id])
 
   @@unique([leaseId, spaceId])
+  @@index([spaceId])
 }
 
 model RentHistory {
@@ -386,6 +592,9 @@ model RentHistory {
 
   propertyLease PropertyLease? @relation(fields: [propertyLeaseId], references: [id], onDelete: Cascade)
   garageLease   GarageLease?   @relation(fields: [garageLeaseId], references: [id], onDelete: Cascade)
+
+  @@index([propertyLeaseId, changeDate])
+  @@index([garageLeaseId, changeDate])
 }
 
 model Debt {
@@ -413,6 +622,7 @@ model Debt {
 
   @@index([tenantId, dueDate])
   @@index([tenantId, status])
+  @@index([tenantId, renterId])
 }
 
 model Payment {
@@ -431,7 +641,9 @@ model Payment {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   debt   Debt   @relation(fields: [debtId], references: [id], onDelete: Cascade)
 
+  @@unique([tenantId, receiptNumber])
   @@index([tenantId, paidAt])
+  @@index([debtId])
 }
 
 model Document {
@@ -447,10 +659,15 @@ model Document {
   mimeType        String?  @db.VarChar(100)
   uploadedAt      DateTime @default(now())
 
-  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  property      Property?      @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property      Property?       @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   renter        PropertyRenter? @relation(fields: [renterId], references: [id], onDelete: SetNull)
-  propertyLease PropertyLease? @relation(fields: [propertyLeaseId], references: [id], onDelete: SetNull)
+  propertyLease PropertyLease?  @relation(fields: [propertyLeaseId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, category])
+  @@index([propertyId])
+  @@index([renterId])
+  @@index([propertyLeaseId])
 }
 
 model TenantSetting {
@@ -464,4 +681,38 @@ model TenantSetting {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, key])
+}
+
+model TenantCounter {
+  id        String   @id @default(uuid())
+  tenantId  String
+  key       String   @db.VarChar(60)
+  value     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+}
+
+model AuditLog {
+  id          String         @id @default(uuid())
+  tenantId    String
+  actorUserId String?
+  actorType   AuditActorType @default(SYSTEM)
+  action      String         @db.VarChar(80)
+  entityType  String         @db.VarChar(80)
+  entityId    String?        @db.VarChar(80)
+  metadata    Json?
+  ipAddress   String?        @db.VarChar(64)
+  userAgent   String?        @db.VarChar(500)
+  createdAt   DateTime       @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User?  @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entityType, entityId])
+  @@index([actorUserId])
 }
