@@ -16,8 +16,8 @@ export type TenantContext = {
   cuit?: string | null;
 };
 
-const PLATFORM_HOST = normalizeHostname(process.env.PLATFORM_HOST || 'onlymob.nanoapp.ar');
-const BASE_DOMAIN = normalizeHostname(process.env.TENANT_BASE_DOMAIN || 'nanoapp.ar');
+const PLATFORM_HOST = normalizeHostname(process.env.PLATFORM_HOST || 'onlymob.nanoapps.ar');
+const BASE_DOMAIN = normalizeHostname(process.env.TENANT_BASE_DOMAIN || 'nanoapps.ar');
 const cache = new Map<string, { expiresAt: number; value: Promise<TenantContext | null> }>();
 
 export class TenantResolutionError extends Error {
@@ -50,7 +50,7 @@ async function findTenantRecord(hostname: string) {
 
   let tenant = domain?.verifiedAt ? domain.tenant : null;
 
-  // 2. Dominio canónico SaaS: <slug>.nanoapp.ar
+  // 2. Dominio canónico SaaS: <slug>.nanoapps.ar
   if (!tenant && hostname.endsWith(`.${BASE_DOMAIN}`)) {
     const slug = hostname.slice(0, -(BASE_DOMAIN.length + 1));
     if (slug && !slug.includes('.') && slug !== PLATFORM_HOST.split('.')[0]) {
