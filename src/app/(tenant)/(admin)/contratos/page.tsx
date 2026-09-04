@@ -1,16 +1,19 @@
 import { Header } from '@/components/layout/header';
 import { getLeasesAction } from '@/actions/leases';
+import { getProfessionalLeaseDataAction } from '@/actions/lease-professional';
 import { getPropertiesAction } from '@/actions/properties';
 import { getRentersAction } from '@/actions/renters';
 import { getGaragesAction } from '@/actions/garages';
 import { getLatestICL } from '@/lib/bcra';
 import { ContractsClient } from './contracts-client';
+import { ProfessionalLeaseManager } from './professional-lease-manager';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ContratosPage() {
-  const [leases, properties, renters, garages, icl] = await Promise.all([
+  const [leases, professionalData, properties, renters, garages, icl] = await Promise.all([
     getLeasesAction(),
+    getProfessionalLeaseDataAction(),
     getPropertiesAction(),
     getRentersAction(),
     getGaragesAction(),
@@ -32,9 +35,10 @@ export default async function ContratosPage() {
     <div>
       <Header
         title="Contratos & Ajustes por Inflación"
-        subtitle="Administración de locaciones, indexación ICL y devengamiento de cuotas"
+        subtitle="Locaciones, garantías, actualizaciones, cuotas y seguimiento contractual"
       />
       <div className="p-8 max-w-7xl mx-auto">
+        <ProfessionalLeaseManager data={professionalData as any} />
         <ContractsClient
           propertyLeases={leases.propertyLeases}
           garageLeases={leases.garageLeases}
