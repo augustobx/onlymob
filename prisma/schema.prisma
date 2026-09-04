@@ -1,0 +1,467 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELED
+}
+
+enum PlatformRole {
+  SUPERADMIN
+  SUPPORT
+}
+
+enum SaasPaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  VOID
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
+enum RenterStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PropertyType {
+  DEPARTAMENTO
+  CASA
+  LOCAL
+  TERRENO
+  OFICINA
+  COCHERA
+  OTRO
+}
+
+enum PropertyStatus {
+  DISPONIBLE
+  ALQUILADO
+  MANTENIMIENTO
+  ARCHIVADO
+}
+
+enum SpaceStatus {
+  FREE
+  OCCUPIED
+  MAINTENANCE
+}
+
+enum LeaseStatus {
+  CURRENT
+  TERMINATED
+}
+
+enum LeaseType {
+  PROPERTY
+  GARAGE
+}
+
+enum DebtType {
+  ALQUILER
+  EXPENSAS
+  DEPOSITO
+  LUZ
+  GAS
+  AGUA
+  OTROS
+}
+
+enum DebtStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA
+  MERCADOPAGO
+  OTRO
+}
+
+// ==========================================
+// PLANO PLATAFORMA SAAS (SUPERADMIN)
+// ==========================================
+model Tenant {
+  id            String       @id @default(uuid())
+  slug          String       @unique @db.VarChar(80)
+  name          String       @db.VarChar(160)
+  status        TenantStatus @default(ACTIVE)
+  timezone      String       @default("America/Argentina/Buenos_Aires") @db.VarChar(80)
+  logoUrl       String?      @db.VarChar(500)
+  address       String?      @db.VarChar(255)
+  phone         String?      @db.VarChar(50)
+  cuit          String?      @db.VarChar(30)
+  receiptHeader String?      @db.VarChar(255)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  archivedAt    DateTime?
+
+  domains          TenantDomain[]
+  subscriptions    TenantSubscription[]
+  featureOverrides TenantFeatureOverride[]
+  saasPayments     SaasPayment[]
+  users            User[]
+  renters          PropertyRenter[]
+  properties       Property[]
+  garages          Garage[]
+  propertyLeases   PropertyLease[]
+  garageLeases     GarageLease[]
+  debts            Debt[]
+  payments         Payment[]
+  documents        Document[]
+  settings         TenantSetting[]
+}
+
+model TenantDomain {
+  id         String    @id @default(uuid())
+  tenantId   String
+  hostname   String    @unique @db.VarChar(180)
+  isPrimary  Boolean   @default(false)
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Plan {
+  id            String   @id @default(uuid())
+  code          String   @unique @db.VarChar(60)
+  name          String   @db.VarChar(120)
+  description   String?  @db.Text
+  priceMonthly  Decimal  @default(0.00) @db.Decimal(12, 2)
+  priceYearly   Decimal  @default(0.00) @db.Decimal(12, 2)
+  maxProperties Int      @default(50)
+  maxGarages    Int      @default(10)
+  maxUsers      Int      @default(5)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  subscriptions TenantSubscription[]
+}
+
+model TenantSubscription {
+  id                 String             @id @default(uuid())
+  tenantId           String
+  planId             String
+  status             SubscriptionStatus @default(TRIAL)
+  currentPeriodStart DateTime           @default(now())
+  currentPeriodEnd   DateTime
+  trialEndsAt        DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id])
+}
+
+model TenantFeatureOverride {
+  id         String   @id @default(uuid())
+  tenantId   String
+  featureKey String   @db.VarChar(80)
+  enabled    Boolean
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, featureKey])
+}
+
+model SaasPayment {
+  id          String            @id @default(uuid())
+  tenantId    String
+  amount      Decimal           @db.Decimal(12, 2)
+  currency    String            @default("ARS") @db.VarChar(10)
+  status      SaasPaymentStatus @default(PENDING)
+  paymentDate DateTime          @default(now())
+  reference   String?           @db.VarChar(120)
+  notes       String?           @db.Text
+  createdAt   DateTime          @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model SuperAdminUser {
+  id           String       @id @default(uuid())
+  email        String       @unique @db.VarChar(120)
+  passwordHash String       @db.VarChar(255)
+  name         String       @db.VarChar(120)
+  role         PlatformRole @default(SUPERADMIN)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+// ==========================================
+// PLANO INMOBILIARIA (TENANT SCOPED)
+// ==========================================
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String
+  email        String    @db.VarChar(120)
+  passwordHash String    @db.VarChar(255)
+  name         String    @db.VarChar(120)
+  role         UserRole  @default(ADMIN)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+}
+
+model PropertyRenter {
+  id                 String       @id @default(uuid())
+  tenantId           String
+  firstName          String       @db.VarChar(80)
+  lastName           String       @db.VarChar(80)
+  dni                String       @db.VarChar(30)
+  email              String?      @db.VarChar(120)
+  phone              String?      @db.VarChar(50)
+  address            String?      @db.VarChar(200)
+  status             RenterStatus @default(ACTIVE)
+  portalPasswordHash String?      @db.VarChar(255)
+  notes              String?      @db.Text
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  propertyLeases PropertyLease[]
+  garageLeases   GarageLease[]
+  debts          Debt[]
+  documents      Document[]
+
+  @@unique([tenantId, dni])
+  @@index([tenantId, email])
+}
+
+model Property {
+  id            String         @id @default(uuid())
+  tenantId      String
+  code          String         @db.VarChar(50)
+  address       String         @db.VarChar(255)
+  type          PropertyType   @default(DEPARTAMENTO)
+  rooms         Int?
+  sqm           Decimal?       @db.Decimal(8, 2)
+  baseRent      Decimal?       @db.Decimal(12, 2)
+  expensesShare Decimal?       @db.Decimal(6, 2)
+  status        PropertyStatus @default(DISPONIBLE)
+  notes         String?        @db.Text
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  propertyLeases PropertyLease[]
+  documents      Document[]
+
+  @@unique([tenantId, code])
+}
+
+model Garage {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String   @db.VarChar(120)
+  address     String   @db.VarChar(255)
+  totalSpaces Int      @default(0)
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  spaces GarageSpace[]
+}
+
+model GarageSpace {
+  id          String      @id @default(uuid())
+  garageId    String
+  spaceNumber String      @db.VarChar(30)
+  status      SpaceStatus @default(FREE)
+  notes       String?     @db.VarChar(200)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  garage      Garage             @relation(fields: [garageId], references: [id], onDelete: Cascade)
+  leaseSpaces GarageLeaseSpace[]
+
+  @@unique([garageId, spaceNumber])
+}
+
+model PropertyLease {
+  id                 String      @id @default(uuid())
+  tenantId           String
+  propertyId         String
+  renterId           String
+  startDate          DateTime    @db.Date
+  endDate            DateTime    @db.Date
+  currentRent        Decimal     @db.Decimal(12, 2)
+  deposit            Decimal     @default(0.00) @db.Decimal(12, 2)
+  increasePercent    Decimal     @default(0.00) @db.Decimal(6, 2)
+  updatePeriodMonths Int         @default(4)
+  status             LeaseStatus @default(CURRENT)
+  notes              String?     @db.Text
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property    Property       @relation(fields: [propertyId], references: [id])
+  renter      PropertyRenter @relation(fields: [renterId], references: [id])
+  rentHistory RentHistory[]
+  debts       Debt[]
+  documents   Document[]
+}
+
+model GarageLease {
+  id              String      @id @default(uuid())
+  tenantId        String
+  renterId        String
+  startDate       DateTime    @db.Date
+  endDate         DateTime    @db.Date
+  rentPerSpace    Decimal     @default(0.00) @db.Decimal(12, 2)
+  totalRent       Decimal     @db.Decimal(12, 2)
+  deposit         Decimal     @default(0.00) @db.Decimal(12, 2)
+  increasePercent Decimal     @default(0.00) @db.Decimal(6, 2)
+  status          LeaseStatus @default(CURRENT)
+  notes           String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  renter      PropertyRenter     @relation(fields: [renterId], references: [id])
+  spaces      GarageLeaseSpace[]
+  rentHistory RentHistory[]
+  debts       Debt[]
+}
+
+model GarageLeaseSpace {
+  id        String   @id @default(uuid())
+  leaseId   String
+  spaceId   String
+  createdAt DateTime @default(now())
+
+  lease GarageLease @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  space GarageSpace @relation(fields: [spaceId], references: [id])
+
+  @@unique([leaseId, spaceId])
+}
+
+model RentHistory {
+  id              String    @id @default(uuid())
+  propertyLeaseId String?
+  garageLeaseId   String?
+  changeDate      DateTime  @db.Date
+  oldRent         Decimal   @db.Decimal(12, 2)
+  newRent         Decimal   @db.Decimal(12, 2)
+  percent         Decimal?  @db.Decimal(6, 2)
+  indexUsed       String?   @db.VarChar(50)
+  notes           String?   @db.VarChar(255)
+  createdAt       DateTime  @default(now())
+
+  propertyLease PropertyLease? @relation(fields: [propertyLeaseId], references: [id], onDelete: Cascade)
+  garageLease   GarageLease?   @relation(fields: [garageLeaseId], references: [id], onDelete: Cascade)
+}
+
+model Debt {
+  id              String     @id @default(uuid())
+  tenantId        String
+  leaseType       LeaseType  @default(PROPERTY)
+  propertyLeaseId String?
+  garageLeaseId   String?
+  renterId        String
+  type            DebtType   @default(ALQUILER)
+  description     String     @db.VarChar(255)
+  amount          Decimal    @db.Decimal(12, 2)
+  dueDate         DateTime   @db.Date
+  paidAmount      Decimal    @default(0.00) @db.Decimal(12, 2)
+  status          DebtStatus @default(PENDING)
+  generatedAt     DateTime   @default(now())
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  propertyLease PropertyLease? @relation(fields: [propertyLeaseId], references: [id], onDelete: Cascade)
+  garageLease   GarageLease?   @relation(fields: [garageLeaseId], references: [id], onDelete: Cascade)
+  renter        PropertyRenter @relation(fields: [renterId], references: [id])
+  payments      Payment[]
+
+  @@index([tenantId, dueDate])
+  @@index([tenantId, status])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  tenantId      String
+  debtId        String
+  amount        Decimal       @db.Decimal(12, 2)
+  paidAt        DateTime      @default(now())
+  method        PaymentMethod @default(EFECTIVO)
+  reference     String?       @db.VarChar(120)
+  receiptNumber String?       @db.VarChar(60)
+  receiptPdfUrl String?       @db.VarChar(500)
+  notes         String?       @db.Text
+  createdAt     DateTime      @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  debt   Debt   @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, paidAt])
+}
+
+model Document {
+  id              String   @id @default(uuid())
+  tenantId        String
+  propertyId      String?
+  renterId        String?
+  propertyLeaseId String?
+  category        String   @db.VarChar(60)
+  fileName        String   @db.VarChar(255)
+  fileUrl         String   @db.VarChar(500)
+  fileSize        Int?
+  mimeType        String?  @db.VarChar(100)
+  uploadedAt      DateTime @default(now())
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property      Property?      @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  renter        PropertyRenter? @relation(fields: [renterId], references: [id], onDelete: SetNull)
+  propertyLease PropertyLease? @relation(fields: [propertyLeaseId], references: [id], onDelete: SetNull)
+}
+
+model TenantSetting {
+  id        String   @id @default(uuid())
+  tenantId  String
+  key       String   @db.VarChar(100)
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+}

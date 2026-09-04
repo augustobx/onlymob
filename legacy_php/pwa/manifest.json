@@ -1,0 +1,20 @@
+{
+  "name": "Mis Contratos",
+  "short_name": "InquilinoApp",
+  "start_url": "/login.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4F46E5",
+  "icons": [
+    {
+      "src": "/icons/192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
