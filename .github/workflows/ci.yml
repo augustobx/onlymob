@@ -34,6 +34,7 @@ jobs:
       MYSQL_DATABASE: onlymob_ci
       MYSQL_USER: onlymob
       MYSQL_PASSWORD: onlymob_ci_password
+      MYSQL_ROOT_PASSWORD: root_ci_password
       DATABASE_URL: mysql://onlymob:onlymob_ci_password@127.0.0.1:3306/onlymob_ci
       PLATFORM_HOST: onlymob.localhost
       TENANT_BASE_DOMAIN: localhost
@@ -68,11 +69,29 @@ jobs:
       - name: Validate Prisma schema
         run: npx prisma validate
 
-      - name: Bootstrap database through production migration entrypoint
+      - name: Bootstrap clean database through production migration entrypoint
         run: sh scripts/deploy-migrate.sh
 
       - name: Verify migration idempotency
         run: sh scripts/deploy-migrate.sh
+
+      - name: Simulate existing pre-Prisma database
+        run: |
+          MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mariadb -h 127.0.0.1 -u root -e "CREATE DATABASE onlymob_existing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON onlymob_existing.* TO 'onlymob'@'%'; FLUSH PRIVILEGES;"
+          MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing < prisma/migrations/20260904190000_baseline/migration.sql
+
+      - name: Upgrade existing database without recreating baseline
+        env:
+          MYSQL_DATABASE: onlymob_existing
+          DATABASE_URL: mysql://onlymob:onlymob_ci_password@127.0.0.1:3306/onlymob_existing
+          SUPERADMIN_EMAIL: ""
+          SUPERADMIN_PASSWORD: ""
+        run: |
+          sh scripts/deploy-migrate.sh
+          TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='onlymob_existing' AND table_name IN ('Contact','PropertyOwner','AuditLog','RoleProfile','TenantCounter');")
+          test "$TABLES" = "5"
+          BASELINE=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM _prisma_migrations WHERE migration_name='20260904190000_baseline' AND finished_at IS NOT NULL;")
+          test "$BASELINE" = "1"
 
       - name: Typecheck
         run: npx tsc --noEmit
