@@ -34,7 +34,8 @@ export function normalizeHostname(value: string) {
 export async function getRequestHostname() {
   const headerStore = await headers();
   const forwardedHost = headerStore.get('x-forwarded-host')?.split(',')[0];
-  return normalizeHostname(forwardedHost || headerStore.get('host') || '');
+  const tenantHost = headerStore.get('x-tenant-host');
+  return normalizeHostname(forwardedHost || tenantHost || headerStore.get('host') || '');
 }
 
 async function findTenantRecord(hostname: string) {
