@@ -32,7 +32,9 @@
     "zod": "^3.24.2"
   },
   "overrides": {
-    "mariadb": "3.5.4"
+    "deepmerge-ts": "8.0.2",
+    "mariadb": "3.5.4",
+    "mysql2": "3.24.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
