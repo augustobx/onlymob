@@ -31,7 +31,7 @@ RUN npx prisma generate \
     && npm run build
 
 # =========================
-# 3. Migraciones versionadas
+# 3. Migraciones y Seeding
 # =========================
 FROM base AS migrator
 RUN apk add --no-cache mariadb-client openssl
@@ -40,9 +40,13 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/db ./db
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+RUN chmod +x /app/scripts/deploy-migrate.sh
 USER node
-CMD ["npx", "prisma", "migrate", "deploy"]
+CMD ["sh", "/app/scripts/deploy-migrate.sh"]
 
 # =========================
 # 4. Producción

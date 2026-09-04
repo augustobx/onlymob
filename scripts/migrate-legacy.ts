@@ -179,6 +179,12 @@ async function run() {
   }
 
   // 6. Migrar Propiedades
+  const existingPropsCount = await platformPrisma.property.count({ where: { tenantId: tenant.id } });
+  if (existingPropsCount > 0) {
+    console.log(`ℹ️ El tenant ${tenant.slug} ya cuenta con ${existingPropsCount} propiedades migradas. Omitiendo importación duplicada.`);
+    return;
+  }
+
   console.log('🏠 Migrando propiedades...');
   const propertyRows = extractInsertValues(sql1, 'properties');
   // Formato: (`id`, `code`, `address`, `type`, `rooms`, `sqm`, `price_rent`, `expenses_share`, `created_at`)
