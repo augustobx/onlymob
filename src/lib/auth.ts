@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { platformPrisma } from '@/lib/prisma-core';
+import { resolveTenantContext } from '@/lib/tenant-context';
 
 export const ADMIN_COOKIE_NAME = 'onlymob_admin_session';
 export const RENTER_COOKIE_NAME = 'onlymob_renter_session';
@@ -160,12 +161,21 @@ export async function getRenterSession(expectedTenantId?: string): Promise<Rente
 
   const session = verifyToken<RenterSession>(token);
   if (!session) return null;
-  if (expectedTenantId && session.tenantId !== expectedTenantId) return null;
+
+  let tenantId = expectedTenantId;
+  if (!tenantId) {
+    try {
+      tenantId = (await resolveTenantContext()).id;
+    } catch {
+      return null;
+    }
+  }
+  if (session.tenantId !== tenantId) return null;
 
   const renter = await platformPrisma.propertyRenter.findFirst({
     where: {
       id: session.renterId,
-      tenantId: session.tenantId,
+      tenantId,
       status: 'ACTIVE',
     },
     include: { tenant: true },
