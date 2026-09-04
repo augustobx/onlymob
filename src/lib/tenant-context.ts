@@ -16,8 +16,8 @@ export type TenantContext = {
   cuit?: string | null;
 };
 
-const PLATFORM_HOST = (process.env.PLATFORM_HOST || 'onlymob.nanoapps.ar').toLowerCase();
-const BASE_DOMAIN = (process.env.TENANT_BASE_DOMAIN || 'nanoapps.ar').toLowerCase();
+const PLATFORM_HOST = normalizeHostname(process.env.PLATFORM_HOST || 'onlymob.nanoapp.ar');
+const BASE_DOMAIN = normalizeHostname(process.env.TENANT_BASE_DOMAIN || 'nanoapp.ar');
 const cache = new Map<string, { expiresAt: number; value: Promise<TenantContext | null> }>();
 
 export class TenantResolutionError extends Error {
@@ -27,19 +27,22 @@ export class TenantResolutionError extends Error {
   }
 }
 
-export function normalizeHostname(value: string) {
-  return value.trim().toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
+export function normalizeHostname(value: string | null | undefined) {
+  if (!value) return '';
+  const raw = value.trim().toLowerCase();
+  if (!raw || raw.includes(',')) return '';
+  return raw.replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/\.$/, '').replace(/:\d+$/, '');
 }
 
 export async function getRequestHostname() {
   const headerStore = await headers();
-  const forwardedHost = headerStore.get('x-forwarded-host')?.split(',')[0];
-  const tenantHost = headerStore.get('x-tenant-host');
-  return normalizeHostname(forwardedHost || tenantHost || headerStore.get('host') || '');
+  // Igual que OnlyGym: Host es la fuente autoritativa. Nginx Proxy Manager conserva
+  // el Host solicitado por el cliente; no dependemos de X-Forwarded-Host para tenancy.
+  return normalizeHostname(headerStore.get('host'));
 }
 
 async function findTenantRecord(hostname: string) {
-  // 1. Check custom domain
+  // 1. Coincidencia exacta de dominio registrado.
   const domain = await platformPrisma.tenantDomain.findUnique({
     where: { hostname },
     include: { tenant: true },
@@ -47,7 +50,7 @@ async function findTenantRecord(hostname: string) {
 
   let tenant = domain?.verifiedAt ? domain.tenant : null;
 
-  // 2. Check subdomain (e.g. taurizano.nanoapps.ar)
+  // 2. Dominio canónico SaaS: <slug>.nanoapp.ar
   if (!tenant && hostname.endsWith(`.${BASE_DOMAIN}`)) {
     const slug = hostname.slice(0, -(BASE_DOMAIN.length + 1));
     if (slug && !slug.includes('.') && slug !== PLATFORM_HOST.split('.')[0]) {
@@ -55,7 +58,7 @@ async function findTenantRecord(hostname: string) {
     }
   }
 
-  // 3. Fallback for localhost or direct dev: read cookie or return primary/first active tenant
+  // 3. Fallback sólo para desarrollo/plataforma directa.
   if (!tenant && (hostname.includes('localhost') || hostname.includes('127.0.0.1') || hostname === PLATFORM_HOST)) {
     try {
       const cookieStore = await cookies();
@@ -120,6 +123,7 @@ export async function resolveTenantContext(): Promise<TenantContext> {
   cache.set(hostname, { value, expiresAt: Date.now() + 2_000 });
   const tenant = await value;
   if (!tenant) {
+    console.error(`[OnlyMob tenant] TENANT_NOT_FOUND host=${hostname || '<empty>'} base=${BASE_DOMAIN} platform=${PLATFORM_HOST}`);
     throw new TenantResolutionError('TENANT_NOT_FOUND');
   }
   return tenant;
