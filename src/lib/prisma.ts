@@ -23,8 +23,6 @@ const WRITE_WHERE_OPERATIONS = new Set([
   'deleteMany',
 ]);
 
-const tenantClientCache = new Map<string, any>();
-
 function tenantOperation(tenantId: string) {
   return async ({ operation, args, query }: any) => {
     args ||= {};
@@ -47,11 +45,9 @@ function tenantOperation(tenantId: string) {
 
 export async function getTenantPrisma() {
   const tenant = await resolveTenantContext();
-  const cached = tenantClientCache.get(tenant.id);
-  if (cached) return cached;
-
   const scoped = tenantOperation(tenant.id);
-  const client = platformPrisma.$extends({
+
+  return platformPrisma.$extends({
     query: {
       user: { $allOperations: scoped },
       propertyRenter: { $allOperations: scoped },
@@ -82,7 +78,4 @@ export async function getTenantPrisma() {
       recurringCharge: { $allOperations: scoped },
     },
   });
-
-  tenantClientCache.set(tenant.id, client);
-  return client;
 }
