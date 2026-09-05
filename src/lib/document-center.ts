@@ -147,6 +147,7 @@ export async function listDocuments(tenantId: string, limit = 150) {
 }
 
 export async function registerDocument(input: {
+  id?: string | null;
   tenantId: string;
   category: string;
   fileName: string;
@@ -167,7 +168,7 @@ export async function registerDocument(input: {
   paymentId?: string | null;
   ownerSettlementId?: string | null;
 }) {
-  const id = randomUUID();
+  const id = input.id || randomUUID();
   await platformPrisma.$executeRaw(Prisma.sql`
     INSERT INTO Document (
       id, tenantId, propertyId, renterId, propertyLeaseId, maintenanceRequestId, inspectionId,
