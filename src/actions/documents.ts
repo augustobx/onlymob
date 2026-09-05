@@ -51,11 +51,6 @@ const GenerateDocumentSchema = RelationsSchema.extend({
 
 type Relations = z.infer<typeof RelationsSchema>;
 
-function text(value: unknown) {
-  if (value == null) return '';
-  return String(value);
-}
-
 function date(value: Date | null | undefined) {
   return value ? value.toLocaleDateString('es-AR') : '';
 }
@@ -141,10 +136,13 @@ async function loadRelations(tenantId: string, relations: Relations) {
   return { property, renter, lease, maintenance, inspection, contact, deal, payment, settlement };
 }
 
-function buildVariables(tenant: { name: string; cuit: string | null; address: string | null; phone: string | null }, entities: Awaited<ReturnType<typeof loadRelations>>) {
+function buildVariables(
+  tenant: { name: string; cuit: string | null; address: string | null; phone: string | null },
+  entities: Awaited<ReturnType<typeof loadRelations>>,
+) {
   const { property, renter, lease, maintenance, inspection, contact, deal, payment, settlement } = entities;
   const variables: Record<string, string> = {
-    'today': new Date().toLocaleDateString('es-AR'),
+    today: new Date().toLocaleDateString('es-AR'),
     'tenant.name': tenant.name,
     'tenant.cuit': tenant.cuit || '',
     'tenant.address': tenant.address || '',
@@ -310,14 +308,15 @@ export async function registerExternalDocumentAction(data: z.input<typeof Regist
   const { tenant, session } = await requireTenantAdmin();
   const validated = RegisterDocumentSchema.parse(data);
   await loadRelations(tenant.id, validated);
+
   const documentId = await registerDocument({
+    ...validated,
     tenantId: tenant.id,
     category: validated.category.trim().toUpperCase(),
     fileName: validated.fileName.trim(),
     fileUrl: validated.fileUrl.trim(),
     mimeType: validated.mimeType?.trim() || null,
     notes: validated.notes?.trim() || null,
-    ...validated,
   });
 
   await auditTenantAction({ tenantId: tenant.id, actorUserId: session.userId, action: 'DOCUMENT_REGISTERED', entityType: 'Document', entityId: documentId, metadata: { category: validated.category } });
@@ -371,16 +370,3 @@ export async function generateDocumentFromTemplateAction(data: z.input<typeof Ge
   revalidatePath('/documentos');
   return { success: true, documentId, downloadUrl };
 }
-
-export const DOCUMENT_TEMPLATE_VARIABLES = [
-  '{{today}}', '{{tenant.name}}', '{{tenant.cuit}}', '{{tenant.address}}', '{{tenant.phone}}',
-  '{{property.code}}', '{{property.address}}', '{{property.type}}', '{{property.city}}', '{{property.province}}', '{{property.operation}}', '{{property.rentPrice}}', '{{property.salePrice}}',
-  '{{contact.fullName}}', '{{contact.document}}', '{{contact.cuit}}', '{{contact.email}}', '{{contact.phone}}', '{{contact.address}}',
-  '{{renter.fullName}}', '{{renter.dni}}', '{{renter.email}}', '{{renter.phone}}', '{{renter.address}}',
-  '{{lease.startDate}}', '{{lease.endDate}}', '{{lease.currentRent}}', '{{lease.deposit}}', '{{lease.propertyCode}}', '{{lease.propertyAddress}}', '{{lease.renterName}}', '{{lease.renterDni}}', '{{lease.guarantorName}}', '{{lease.nextAdjustmentDate}}',
-  '{{deal.operation}}', '{{deal.status}}', '{{deal.amount}}', '{{deal.propertyCode}}', '{{deal.propertyAddress}}', '{{deal.contactName}}', '{{deal.agentName}}',
-  '{{payment.amount}}', '{{payment.date}}', '{{payment.method}}', '{{payment.reference}}', '{{payment.receiptNumber}}', '{{payment.renterName}}', '{{payment.renterDni}}', '{{payment.propertyAddress}}',
-  '{{maintenance.title}}', '{{maintenance.category}}', '{{maintenance.status}}', '{{maintenance.priority}}', '{{maintenance.description}}', '{{maintenance.propertyCode}}', '{{maintenance.propertyAddress}}', '{{maintenance.renterName}}', '{{maintenance.providerName}}', '{{maintenance.actualCost}}',
-  '{{settlement.ownerName}}', '{{settlement.periodStart}}', '{{settlement.periodEnd}}', '{{settlement.grossCollected}}', '{{settlement.expensesTotal}}', '{{settlement.commissionTotal}}', '{{settlement.taxesTotal}}', '{{settlement.netAmount}}',
-  '{{inspection.type}}', '{{inspection.status}}', '{{inspection.scheduledAt}}', '{{inspection.performedAt}}', '{{inspection.summary}}', '{{inspection.propertyCode}}', '{{inspection.propertyAddress}}', '{{inspection.renterName}}', '{{inspection.inspectorName}}',
-] as const;
