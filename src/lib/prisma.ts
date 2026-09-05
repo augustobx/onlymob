@@ -76,6 +76,11 @@ export async function getTenantPrisma() {
       propertyExpense: { $allOperations: scoped },
       ownerSettlement: { $allOperations: scoped },
       recurringCharge: { $allOperations: scoped },
+      providerProfile: { $allOperations: scoped },
+      maintenanceRequest: { $allOperations: scoped },
+      maintenanceEvent: { $allOperations: scoped },
+      inspection: { $allOperations: scoped },
+      inspectionFinding: { $allOperations: scoped },
     },
   });
 }
