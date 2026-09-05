@@ -134,7 +134,7 @@ a { text-underline-offset: 3px; }
 .status-pill--danger { background:var(--danger-soft);color:var(--danger);border-color:#fecdd3; }
 .status-pill--info { background:var(--info-soft);color:var(--info);border-color:#dbeafe; }
 
-.btn-primary,.btn-secondary { min-height:36px;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 12px;border-radius:10px;font-size:11px;font-weight:750;cursor:pointer;transition:transform .12s,box-shadow .12s,background .12s,border .12s;color .12s; }
+.btn-primary,.btn-secondary { min-height:36px;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 12px;border-radius:10px;font-size:11px;font-weight:750;cursor:pointer;transition:transform .12s,box-shadow .12s,background .12s,border .12s,color .12s; }
 .btn-primary { border:1px solid #4f46e5;background:#4f46e5;color:#fff;box-shadow:0 5px 13px rgba(79,70,229,.18); }
 .btn-primary:hover { background:#4338ca;border-color:#4338ca;transform:translateY(-1px); }
 .btn-secondary { border:1px solid #dfe4ec;background:#fff;color:#475569;box-shadow:var(--shadow-xs); }
