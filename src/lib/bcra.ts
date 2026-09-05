@@ -15,6 +15,10 @@ function seriesUrl() {
   return process.env.BCRA_API_BASE_URL || DEFAULT_BCRA_SERIES_URL;
 }
 
+function isoDate(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
 function normalizeApiRows(data: any): Array<{ fecha: string; valor: number }> {
   const rows = data?.results || data?.data || [];
   if (!Array.isArray(rows)) return [];
@@ -56,7 +60,10 @@ export async function fetchICLFromAPI(): Promise<ICLData | null> {
       });
       if (res.ok) rows = normalizeApiRows(await res.json());
     } else {
-      rows = await fetchOfficialRange();
+      const until = new Date();
+      const since = new Date(until);
+      since.setDate(since.getDate() - 45);
+      rows = await fetchOfficialRange(isoDate(since), isoDate(until));
     }
 
     const latest = rows.at(-1);
@@ -96,10 +103,6 @@ export async function fetchICLFromCSV(): Promise<ICLData | null> {
   } catch {
     return null;
   }
-}
-
-function isoDate(value: Date) {
-  return value.toISOString().slice(0, 10);
 }
 
 export async function getOfficialICLAtOrBefore(value: Date): Promise<ICLData | null> {
