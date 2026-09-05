@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function DocumentsPage() {
   const data = await getDocumentCenterDataAction();
+  const serializedData = JSON.parse(JSON.stringify(data));
 
   return (
     <div>
@@ -14,7 +15,7 @@ export default async function DocumentsPage() {
         subtitle="Repositorio central, generación de PDFs y documentos vinculados a cada operación"
       />
       <div className="p-8 max-w-7xl mx-auto">
-        <DocumentCenterClient data={data} />
+        <DocumentCenterClient data={serializedData} />
       </div>
     </div>
   );
