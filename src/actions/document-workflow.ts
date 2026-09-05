@@ -1,5 +1,6 @@
 'use server';
 
+import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { Prisma } from '@prisma/client';
 import { platformPrisma } from '@/lib/prisma-core';
@@ -34,8 +35,16 @@ export async function setDocumentWorkflowStatusAction(documentId:string,status:W
 export async function createDocumentVersionAction(documentId:string){
   const{tenant,session}=await requirePermission('documents','create');
   const rows=await platformPrisma.$queryRaw<Array<any>>(Prisma.sql`SELECT * FROM Document WHERE id=${documentId} AND tenantId=${tenant.id} LIMIT 1`);const doc=rows[0];if(!doc)throw new Error('Documento no encontrado.');
-  const newId=crypto.randomUUID();const version=Number(doc.version||1)+1;
-  await platformPrisma.$executeRaw(Prisma.sql`INSERT INTO Document (id,tenantId,propertyId,renterId,propertyLeaseId,maintenanceRequestId,inspectionId,contactId,dealId,paymentId,ownerSettlementId,category,fileName,fileUrl,fileSize,mimeType,notes,sourceType,sourceId,templateId,renderedSnapshot,uploadedAt,workflowStatus,version) SELECT ${newId},tenantId,propertyId,renterId,propertyLeaseId,maintenanceRequestId,inspectionId,contactId,dealId,paymentId,ownerSettlementId,category,fileName,fileUrl,fileSize,mimeType,notes,sourceType,sourceId,templateId,renderedSnapshot,${new Date()},'DRAFT',${version} FROM Document WHERE id=${documentId} AND tenantId=${tenant.id}`);
+  const newId=randomUUID();const version=Number(doc.version||1)+1;
+  await platformPrisma.$executeRaw(Prisma.sql`
+    INSERT INTO Document (
+      id,tenantId,propertyId,renterId,propertyLeaseId,maintenanceRequestId,inspectionId,contactId,dealId,paymentId,ownerSettlementId,
+      generatedFromTemplateId,source,contentSnapshot,notes,category,fileName,fileUrl,fileSize,mimeType,uploadedAt,workflowStatus,version
+    )
+    SELECT ${newId},tenantId,propertyId,renterId,propertyLeaseId,maintenanceRequestId,inspectionId,contactId,dealId,paymentId,ownerSettlementId,
+      generatedFromTemplateId,source,contentSnapshot,notes,category,fileName,fileUrl,fileSize,mimeType,${new Date()},'DRAFT',${version}
+    FROM Document WHERE id=${documentId} AND tenantId=${tenant.id}
+  `);
   await auditTenantAction({tenantId:tenant.id,actorUserId:session.userId,action:'DOCUMENT_CREATED',entityType:'Document',entityId:newId,metadata:{propertyId:doc.propertyId||undefined,renterId:doc.renterId||undefined,previousDocumentId:documentId,version}});revalidatePath('/documentos');return{success:true,documentId:newId,version};
 }
 
