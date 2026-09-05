@@ -10,12 +10,12 @@ export default async function PropertiesPage() {
   return (
     <div>
       <Header
-        title="Inmuebles & Propiedades"
-        subtitle={`Administración de ${properties.length} propiedades registradas`}
+        title="Propiedades"
+        subtitle={`${properties.length} inmuebles · gestión comercial, contractual y administrativa`}
       />
-      <div className="p-8 max-w-7xl mx-auto">
+      <main className="property-workspace">
         <PropertyTable initialProperties={properties} />
-      </div>
+      </main>
     </div>
   );
 }
