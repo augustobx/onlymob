@@ -56,7 +56,9 @@ function channelStatus(channel: NotificationChannel): NotificationStatus {
 }
 
 export async function createNotification(input: NotificationInput) {
-  const channels = [...new Set(input.channels?.length ? input.channels : ['INTERNAL'])];
+  const channels: NotificationChannel[] = input.channels?.length
+    ? [...new Set(input.channels)]
+    : ['INTERNAL'];
   let created = 0;
 
   for (const channel of channels) {
@@ -94,7 +96,7 @@ export async function listInternalNotifications(input: {
   const audienceFilter = input.userId
     ? Prisma.sql`(audienceType = 'TENANT' OR (audienceType = 'USER' AND recipientRefId = ${input.userId}))`
     : Prisma.sql`audienceType = 'TENANT'`;
-  const unreadFilter = input.unreadOnly ? Prisma.sql`AND readAt IS NULL` : Prisma.empty;
+  const unreadFilter = input.unreadOnly ? Prisma.sql`AND readAt IS NULL` : Prisma.sql``;
 
   return platformPrisma.$queryRaw<NotificationRecord[]>(Prisma.sql`
     SELECT id, tenantId, eventKey, channel, audienceType, recipientRefId, recipientAddress,
