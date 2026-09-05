@@ -14,11 +14,7 @@ export type DomainActivityInput = {
   metadata?: Record<string, unknown>;
 };
 
-type EventDescriptor = {
-  eventKey: string;
-  title: string;
-  description?: string;
-};
+type EventDescriptor = { eventKey: string; title: string; description?: string };
 
 const ACTION_EVENTS: Record<string, EventDescriptor> = {
   PROPERTY_CREATED: { eventKey: 'property.created', title: 'Propiedad creada' },
@@ -54,11 +50,11 @@ const ACTION_EVENTS: Record<string, EventDescriptor> = {
   DOCUMENT_UPDATED: { eventKey: 'document.updated', title: 'Documento actualizado' },
   SETTLEMENT_CREATED: { eventKey: 'settlement.ready', title: 'Liquidación creada' },
   SETTLEMENT_STATUS_CHANGED: { eventKey: 'settlement.ready', title: 'Liquidación actualizada' },
+  COMMUNICATION_SENT: { eventKey: 'communication.sent', title: 'Comunicación enviada' },
+  FINANCIAL_MOVEMENT_CREATED: { eventKey: 'financial.movement.created', title: 'Movimiento financiero registrado' },
 };
 
-function text(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
+function text(value: unknown) { return typeof value === 'string' && value.trim() ? value.trim() : null; }
 
 async function resolveLinks(input: DomainActivityInput) {
   const metadata = input.metadata || {};
@@ -104,14 +100,12 @@ async function resolveLinks(input: DomainActivityInput) {
       propertyId ||= row?.propertyId || null;
       renterId ||= row?.renterId || null;
     } else if (input.entityType === 'Document') {
-      const rows = await platformPrisma.$queryRaw<Array<{ propertyId: string | null; renterId: string | null }>>(Prisma.sql`
-        SELECT propertyId, renterId FROM Document WHERE id=${entityId} AND tenantId=${input.tenantId} LIMIT 1
-      `);
+      const rows = await platformPrisma.$queryRaw<Array<{ propertyId: string | null; renterId: string | null }>>(Prisma.sql`SELECT propertyId, renterId FROM Document WHERE id=${entityId} AND tenantId=${input.tenantId} LIMIT 1`);
       propertyId ||= rows[0]?.propertyId || null;
       renterId ||= rows[0]?.renterId || null;
     } else if (input.entityType === 'OwnerSettlement') {
-      const row = await platformPrisma.ownerSettlement.findFirst({ where: { id: entityId, tenantId: input.tenantId }, select: { ownerId: true } });
-      contactId ||= row?.ownerId || null;
+      const row = await platformPrisma.ownerSettlement.findFirst({ where: { id: entityId, tenantId: input.tenantId }, select: { ownerContactId: true } });
+      contactId ||= row?.ownerContactId || null;
     }
   }
 
@@ -120,10 +114,7 @@ async function resolveLinks(input: DomainActivityInput) {
 
 function fallbackDescriptor(input: DomainActivityInput): EventDescriptor {
   const clean = input.action.toLowerCase().replaceAll('_', '.');
-  return {
-    eventKey: `activity.${clean}`,
-    title: input.action.toLowerCase().replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()),
-  };
+  return { eventKey: `activity.${clean}`, title: input.action.toLowerCase().replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()) };
 }
 
 export async function publishDomainActivity(input: DomainActivityInput) {
@@ -133,30 +124,14 @@ export async function publishDomainActivity(input: DomainActivityInput) {
   const metadata = JSON.stringify(input.metadata || {});
 
   await platformPrisma.$executeRaw(Prisma.sql`
-    INSERT INTO ActivityEvent (
-      id, tenantId, eventKey, title, description, entityType, entityId,
-      propertyId, contactId, renterId, actorUserId, metadata, createdAt
-    ) VALUES (
-      ${id}, ${input.tenantId}, ${descriptor.eventKey}, ${descriptor.title}, ${descriptor.description || null},
-      ${input.entityType}, ${input.entityId || null}, ${links.propertyId}, ${links.contactId}, ${links.renterId},
-      ${input.actorUserId || null}, ${metadata}, ${new Date()}
-    )
+    INSERT INTO ActivityEvent (id,tenantId,eventKey,title,description,entityType,entityId,propertyId,contactId,renterId,actorUserId,metadata,createdAt)
+    VALUES (${id},${input.tenantId},${descriptor.eventKey},${descriptor.title},${descriptor.description || null},${input.entityType},${input.entityId || null},${links.propertyId},${links.contactId},${links.renterId},${input.actorUserId || null},${metadata},${new Date()})
   `);
 
   const queued = await queueWebhookEvent(input.tenantId, descriptor.eventKey, {
-    activityId: id,
-    action: input.action,
-    entityType: input.entityType,
-    entityId: input.entityId || null,
-    propertyId: links.propertyId,
-    contactId: links.contactId,
-    renterId: links.renterId,
-    metadata: input.metadata || {},
+    activityId: id, action: input.action, entityType: input.entityType, entityId: input.entityId || null,
+    propertyId: links.propertyId, contactId: links.contactId, renterId: links.renterId, metadata: input.metadata || {},
   });
-
-  if (queued.queued > 0) {
-    await platformPrisma.$executeRaw(Prisma.sql`UPDATE ActivityEvent SET webhookQueuedAt=${new Date()} WHERE id=${id}`);
-  }
-
+  if (queued.queued > 0) await platformPrisma.$executeRaw(Prisma.sql`UPDATE ActivityEvent SET webhookQueuedAt=${new Date()} WHERE id=${id}`);
   return { id, eventKey: descriptor.eventKey, ...links, webhooksQueued: queued.queued };
 }
