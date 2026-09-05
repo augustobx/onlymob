@@ -7,6 +7,8 @@ export type ICLData = {
 
 let cache: ICLData | null = null;
 const CACHE_TTL = 1000 * 60 * 60 * 2; // 2 hours
+const FALLBACK_CACHE_TTL = 1000 * 60 * 5; // 5 minutes
+const EXTERNAL_TIMEOUT_MS = 800;
 
 export async function fetchICLFromAPI(): Promise<ICLData | null> {
   try {
@@ -14,6 +16,7 @@ export async function fetchICLFromAPI(): Promise<ICLData | null> {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'OnlyMob/1.0' },
       next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
     });
 
     if (!res.ok) return null;
@@ -41,6 +44,7 @@ export async function fetchICLFromCSV(): Promise<ICLData | null> {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'OnlyMob/1.0' },
       next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
     });
 
     if (!res.ok) return null;
@@ -72,29 +76,31 @@ export async function fetchICLFromCSV(): Promise<ICLData | null> {
 }
 
 export async function getLatestICL(): Promise<ICLData> {
-  if (cache && Date.now() - cache.timestamp < CACHE_TTL) {
-    return cache;
+  if (cache) {
+    const ttl = cache.origen === 'fallback' ? FALLBACK_CACHE_TTL : CACHE_TTL;
+    if (Date.now() - cache.timestamp < ttl) return cache;
   }
 
-  // 1. Try official API
+  // 1. Try official API with a strict timeout so the dashboard never waits on BCRA.
   const fromApi = await fetchICLFromAPI();
   if (fromApi) {
     cache = fromApi;
     return fromApi;
   }
 
-  // 2. Try CSV fallback
+  // 2. Try CSV fallback with the same bounded wait.
   const fromCsv = await fetchICLFromCSV();
   if (fromCsv) {
     cache = fromCsv;
     return fromCsv;
   }
 
-  // 3. Fallback to latest known historical value if both external calls fail
-  return {
+  // 3. Cache the safe fallback briefly to avoid retrying both external endpoints on every navigation.
+  cache = {
     fecha: new Date().toISOString().split('T')[0],
-    valor: 24.85, // Reference safe fallback
+    valor: 24.85,
     origen: 'fallback',
     timestamp: Date.now(),
   };
+  return cache;
 }

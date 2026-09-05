@@ -6,24 +6,24 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 const rawUrl = process.env.DATABASE_URL || 'mysql://root:@localhost:3306/inmobiliaria';
-const connectionString = rawUrl.replace('mysql://', 'mariadb://');
 
-function getConnectionStringWithPoolOpts() {
-  try {
-    const url = new URL(connectionString);
-    const isBuildPhase = process.env.npm_lifecycle_event === 'build';
-    if (!url.searchParams.has('connectionLimit')) url.searchParams.set('connectionLimit', isBuildPhase ? '1' : '6');
-    if (!url.searchParams.has('acquireTimeout')) url.searchParams.set('acquireTimeout', '30000');
-    if (!url.searchParams.has('idleTimeout')) url.searchParams.set('idleTimeout', '30');
-    if (!url.searchParams.has('minDelayValidation')) url.searchParams.set('minDelayValidation', '500');
-    if (!url.searchParams.has('resetAfterUse')) url.searchParams.set('resetAfterUse', 'true');
-    return url.toString();
-  } catch {
-    return connectionString;
-  }
+function createAdapter() {
+  const dbUrl = new URL(rawUrl.replace(/^mysql:/, 'mariadb:'));
+  const isBuildPhase = process.env.npm_lifecycle_event === 'build';
+
+  return new PrismaMariaDb({
+    host: dbUrl.hostname === 'localhost' ? '127.0.0.1' : dbUrl.hostname,
+    port: Number(dbUrl.port) || 3306,
+    user: decodeURIComponent(dbUrl.username || 'root'),
+    password: decodeURIComponent(dbUrl.password || ''),
+    database: dbUrl.pathname.replace(/^\//, '') || 'inmobiliaria',
+    connectionLimit: isBuildPhase ? 1 : 15,
+    connectTimeout: 10_000,
+    acquireTimeout: 10_000,
+  });
 }
 
-const adapter = new PrismaMariaDb(getConnectionStringWithPoolOpts());
+const adapter = createAdapter();
 
 export const platformPrisma = globalForPrisma.onlyMobPlatformPrisma ?? new PrismaClient({ adapter });
 
