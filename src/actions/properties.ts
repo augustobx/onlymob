@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { getTenantPrisma } from '@/lib/prisma';
-import { auditTenantAction, requireTenantAdmin } from '@/lib/tenant-guard';
+import { auditTenantAction } from '@/lib/tenant-guard';
+import { requirePermission } from '@/lib/permissions';
 import { z } from 'zod';
 
 const PropertySchema = z.object({
@@ -32,7 +33,7 @@ export async function getPropertiesAction(filters?: {
   status?: string;
   sortDir?: 'asc' | 'desc';
 }) {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('properties', 'read');
   const prisma = await getTenantPrisma();
 
   const where: any = { tenantId: tenant.id };
@@ -118,7 +119,7 @@ export async function getPropertiesAction(filters?: {
 }
 
 export async function getPropertyByIdAction(id: string) {
-  await requireTenantAdmin();
+  await requirePermission('properties', 'read');
   const prisma = await getTenantPrisma();
 
   const property = await prisma.property.findFirst({
@@ -200,7 +201,7 @@ export async function savePropertyAction(data: {
   province?: string | null;
   notes?: string;
 }) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('properties', data.id ? 'update' : 'create');
   const prisma = await getTenantPrisma();
   const validated = PropertySchema.parse(data);
 
@@ -245,7 +246,7 @@ export async function savePropertyAction(data: {
 }
 
 export async function deletePropertyAction(id: string) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('properties', 'delete');
   const prisma = await getTenantPrisma();
 
   const property = await prisma.property.findFirst({
