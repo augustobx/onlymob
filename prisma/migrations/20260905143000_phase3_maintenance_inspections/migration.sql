@@ -1,5 +1,5 @@
--- Phase 3: maintenance, providers and inspections.
--- Additive migration. Existing tenant, property, lease, renter and document data is preserved.
+-- Phase 3: maintenance, providers, inspections and portal foundations.
+-- Additive migration. Existing tenant, property, lease, renter, contact and document data is preserved.
 
 CREATE TABLE `ProviderProfile` (
   `id` VARCHAR(191) NOT NULL,
@@ -136,3 +136,13 @@ CREATE INDEX `Document_inspectionId_idx` ON `Document`(`inspectionId`);
 ALTER TABLE `Document`
   ADD CONSTRAINT `Document_maintenanceRequestId_fkey` FOREIGN KEY (`maintenanceRequestId`) REFERENCES `MaintenanceRequest`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `Document_inspectionId_fkey` FOREIGN KEY (`inspectionId`) REFERENCES `Inspection`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `Contact`
+  ADD COLUMN `ownerPortalPasswordHash` VARCHAR(255) NULL,
+  ADD COLUMN `ownerPortalEnabled` BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN `ownerPortalLastLoginAt` DATETIME(3) NULL;
+
+CREATE INDEX `Contact_tenantId_ownerPortalEnabled_idx` ON `Contact`(`tenantId`, `ownerPortalEnabled`);
+
+ALTER TABLE `AuditLog`
+  MODIFY COLUMN `actorType` ENUM('USER','SUPERADMIN','RENTER','OWNER','SYSTEM') NOT NULL DEFAULT 'SYSTEM';
