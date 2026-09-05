@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 const tenantAdminPrefixes = [
-  '/admin','/dashboard','/crm','/agenda','/propiedades','/operaciones','/contactos','/cocheras','/contratos','/mantenimiento','/cobranzas','/administracion','/analytics','/inquilinos','/recibos','/documentos','/integraciones','/comunicaciones','/finanzas','/notificaciones','/ajustes',
+  '/admin','/dashboard','/crm','/agenda','/propiedades','/operaciones','/contactos','/cocheras','/contratos','/mantenimiento','/cobranzas','/administracion','/analytics','/inquilinos','/recibos','/documentos','/integraciones','/comunicaciones','/finanzas','/notificaciones','/ajustes','/aumentos',
 ];
 
 export default function proxy(request: NextRequest) {
@@ -18,5 +18,5 @@ export default function proxy(request: NextRequest) {
 }
 
 export const config = { matcher: [
-  '/admin/:path*','/dashboard/:path*','/crm/:path*','/agenda/:path*','/propiedades/:path*','/operaciones/:path*','/contactos/:path*','/cocheras/:path*','/contratos/:path*','/mantenimiento/:path*','/cobranzas/:path*','/administracion/:path*','/analytics/:path*','/inquilinos/:path*','/recibos/:path*','/documentos/:path*','/integraciones/:path*','/comunicaciones/:path*','/finanzas/:path*','/notificaciones/:path*','/ajustes/:path*','/superadmin/:path*','/portal/:path*','/propietario/:path*',
+  '/admin/:path*','/dashboard/:path*','/crm/:path*','/agenda/:path*','/propiedades/:path*','/operaciones/:path*','/contactos/:path*','/cocheras/:path*','/contratos/:path*','/mantenimiento/:path*','/cobranzas/:path*','/administracion/:path*','/analytics/:path*','/inquilinos/:path*','/recibos/:path*','/documentos/:path*','/integraciones/:path*','/comunicaciones/:path*','/finanzas/:path*','/notificaciones/:path*','/ajustes/:path*','/aumentos/:path*','/superadmin/:path*','/portal/:path*','/propietario/:path*',
 ] };
