@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { platformPrisma } from '@/lib/prisma-core';
-import { auditTenantAction, requireTenantAdmin } from '@/lib/tenant-guard';
+import { auditTenantAction } from '@/lib/tenant-guard';
+import { requirePermission } from '@/lib/permissions';
 import { z } from 'zod';
 
 const CONTACT_ROLES = ['PROSPECT','BUYER','RENTAL_PROSPECT','RENTER','OWNER','GUARANTOR','PROVIDER','GENERAL'] as const;
@@ -28,7 +29,7 @@ const ContactSchema = z.object({
 });
 
 export async function getContactsAction(search?: string, role?: typeof CONTACT_ROLES[number]) {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('contacts', 'read');
   return platformPrisma.contact.findMany({
     where: {
       tenantId: tenant.id,
@@ -40,7 +41,9 @@ export async function getContactsAction(search?: string, role?: typeof CONTACT_R
               { lastName: { contains: search } },
               { companyName: { contains: search } },
               { documentNumber: { contains: search } },
+              { cuit: { contains: search } },
               { email: { contains: search } },
+              { phone: { contains: search } },
             ],
           }
         : {}),
@@ -55,7 +58,7 @@ export async function getContactsAction(search?: string, role?: typeof CONTACT_R
 }
 
 export async function saveContactAction(data: z.input<typeof ContactSchema> & { id?: string }) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('contacts', data.id ? 'update' : 'create');
   const validated = ContactSchema.parse(data);
   const uniqueRoles = [...new Set(validated.roles)];
 
@@ -105,12 +108,13 @@ export async function saveContactAction(data: z.input<typeof ContactSchema> & { 
   });
 
   revalidatePath('/contactos');
+  revalidatePath(`/contactos/${contact.id}`);
   revalidatePath('/propiedades');
   return { success: true, contactId: contact.id };
 }
 
 export async function archiveContactAction(contactId: string) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('contacts', 'delete');
   const contact = await platformPrisma.contact.findFirst({
     where: { id: contactId, tenantId: tenant.id, archivedAt: null },
     include: { ownedProperties: true },
@@ -143,7 +147,7 @@ export async function assignPropertyOwnerAction(data: {
   settlementPreference?: string;
   notes?: string;
 }) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('contacts', 'manage');
   const percentage = data.ownershipPercentage ?? 100;
   if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100) throw new Error('Porcentaje de titularidad inválido.');
 
@@ -209,13 +213,14 @@ export async function assignPropertyOwnerAction(data: {
   });
 
   revalidatePath('/contactos');
+  revalidatePath(`/contactos/${data.contactId}`);
   revalidatePath('/propiedades');
   revalidatePath(`/propiedades/${data.propertyId}`);
   return { success: true, ownerId: owner.id };
 }
 
 export async function removePropertyOwnerAction(ownerId: string) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('contacts', 'manage');
   const owner = await platformPrisma.propertyOwner.findFirst({ where: { id: ownerId, tenantId: tenant.id } });
   if (!owner) throw new Error('Relación de propietario no encontrada.');
 
@@ -230,6 +235,7 @@ export async function removePropertyOwnerAction(ownerId: string) {
   });
 
   revalidatePath('/contactos');
+  revalidatePath(`/contactos/${owner.contactId}`);
   revalidatePath(`/propiedades/${owner.propertyId}`);
   return { success: true };
 }

@@ -6,16 +6,16 @@ const SYSTEM_ROLES = [
   ['OWNER', 'Propietario / Administrador', 'Acceso total a la inmobiliaria'], ['ADMIN', 'Administrador', 'Administración general del tenant'], ['MANAGER', 'Responsable', 'Gestión operativa y del equipo'], ['AGENT', 'Agente', 'Gestión comercial y de propiedades'], ['COLLECTIONS', 'Cobranzas', 'Cobranzas, pagos y cuenta corriente'], ['MAINTENANCE', 'Mantenimiento', 'Gestión operativa y mantenimiento'], ['ACCOUNTING', 'Contabilidad', 'Información financiera y reportes'], ['READ_ONLY', 'Solo lectura', 'Consulta sin permisos de modificación'],
 ] as const;
 
-const ALL_MODULES = ['dashboard','crm','agenda','properties','operations','garages','leases','collections','property_management','maintenance','renters','contacts','documents','notifications','analytics','integrations','settings','audit'];
+const ALL_MODULES = ['dashboard','crm','agenda','properties','operations','garages','leases','collections','property_management','maintenance','renters','contacts','documents','notifications','analytics','integrations','communications','finance','settings','audit'];
 const ALL_ACTIONS = ['read','create','update','delete','export','manage'];
 
 function permissionsFor(roleKey: string) {
   if (roleKey === 'OWNER' || roleKey === 'ADMIN') return ALL_MODULES.flatMap((module) => ALL_ACTIONS.map((action) => [module, action] as const));
   if (roleKey === 'READ_ONLY') return ALL_MODULES.map((module) => [module, 'read'] as const);
-  if (roleKey === 'COLLECTIONS') return ['dashboard','collections','property_management','renters','leases','documents','notifications','analytics'].flatMap((module) => ['read','create','update','export'].map((action) => [module, action] as const));
-  if (roleKey === 'ACCOUNTING') return ['dashboard','collections','property_management','leases','properties','renters','documents','analytics'].flatMap((module) => ['read','export'].map((action) => [module, action] as const));
-  if (roleKey === 'MAINTENANCE') return ['dashboard','properties','property_management','garages','agenda','maintenance','documents','notifications'].flatMap((module) => ['read','create','update','manage'].map((action) => [module, action] as const));
-  if (roleKey === 'AGENT') return ['dashboard','crm','agenda','properties','operations','renters','contacts','documents','notifications'].flatMap((module) => ['read','create','update'].map((action) => [module, action] as const));
+  if (roleKey === 'COLLECTIONS') return ['dashboard','collections','property_management','renters','leases','documents','notifications','analytics','communications','finance'].flatMap((module) => ['read','create','update','export'].map((action) => [module, action] as const));
+  if (roleKey === 'ACCOUNTING') return ['dashboard','collections','property_management','leases','properties','renters','documents','analytics','finance'].flatMap((module) => ['read','export','create','update'].map((action) => [module, action] as const));
+  if (roleKey === 'MAINTENANCE') return ['dashboard','properties','property_management','garages','agenda','maintenance','documents','notifications','communications'].flatMap((module) => ['read','create','update','manage'].map((action) => [module, action] as const));
+  if (roleKey === 'AGENT') return ['dashboard','crm','agenda','properties','operations','renters','contacts','documents','notifications','communications'].flatMap((module) => ['read','create','update'].map((action) => [module, action] as const));
   return ALL_MODULES.flatMap((module) => ['read','create','update','export'].map((action) => [module, action] as const));
 }
 

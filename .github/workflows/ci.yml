@@ -38,6 +38,7 @@ jobs:
       NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       INTEGRATION_WEBHOOK_SECRET: ci-onlymob-webhook-secret-minimum-32-characters
       AUTOMATION_CRON_SECRET: ci-onlymob-automation-secret-24-characters
+      SIGNATURE_CALLBACK_SECRET: ci-onlymob-signature-callback-secret-32-characters
       SUPERADMIN_EMAIL: ci-superadmin@example.com
       SUPERADMIN_PASSWORD: CI-SuperAdmin-Password-2026!
       SUPERADMIN_NAME: CI SuperAdmin
@@ -69,6 +70,14 @@ jobs:
           test "$TABLES" = "5"
           COLUMN_COUNT=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='$MYSQL_DATABASE' AND table_name='Plan' AND column_name='maxPublications';")
           test "$COLUMN_COUNT" = "1"
+      - name: Verify Phase 4 integration tables and columns
+        run: |
+          TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$MYSQL_DATABASE' AND table_name IN ('ActivityEvent','CommunicationThread','CommunicationMessage','FinancialAccount','FinancialMovement');")
+          test "$TABLES" = "5"
+          DOC_COLUMNS=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='$MYSQL_DATABASE' AND table_name='Document' AND column_name IN ('workflowStatus','version','sentAt','viewedAt','signedAt','archivedAt','signatureProvider','signatureExternalId','workflowMetadata');")
+          test "$DOC_COLUMNS" = "9"
+          WEBHOOK_RETRY=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='$MYSQL_DATABASE' AND table_name='WebhookDelivery' AND column_name='nextAttemptAt';")
+          test "$WEBHOOK_RETRY" = "1"
       - name: Verify migration idempotency
         run: sh scripts/deploy-migrate.sh
       - name: Simulate existing pre-Prisma database
@@ -83,15 +92,39 @@ jobs:
           SUPERADMIN_PASSWORD: ""
         run: |
           sh scripts/deploy-migrate.sh
-          TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='onlymob_existing' AND table_name IN ('Contact','PropertyOwner','AuditLog','RoleProfile','TenantCounter','ApiCredential','WebhookEndpoint','ImpersonationGrant');")
-          test "$TABLES" = "8"
+          TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='onlymob_existing' AND table_name IN ('Contact','PropertyOwner','AuditLog','RoleProfile','TenantCounter','ApiCredential','WebhookEndpoint','ImpersonationGrant','ActivityEvent','CommunicationThread','CommunicationMessage','FinancialAccount','FinancialMovement');")
+          test "$TABLES" = "13"
+          DOC_COLUMNS=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='onlymob_existing' AND table_name='Document' AND column_name IN ('workflowStatus','version','sentAt','viewedAt','signedAt','archivedAt','signatureProvider','signatureExternalId','workflowMetadata');")
+          test "$DOC_COLUMNS" = "9"
+          WEBHOOK_RETRY=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='onlymob_existing' AND table_name='WebhookDelivery' AND column_name='nextAttemptAt';")
+          test "$WEBHOOK_RETRY" = "1"
           BASELINE=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM _prisma_migrations WHERE migration_name='20260904190000_baseline' AND finished_at IS NOT NULL;")
           test "$BASELINE" = "1"
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: |
+          set -o pipefail
+          npx tsc --noEmit 2>&1 | tee typecheck.log
+      - name: Upload typecheck diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.log
+          if-no-files-found: ignore
+          retention-days: 1
       - name: Production build
         env:
           NODE_ENV: production
-        run: npm run build
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 1
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high

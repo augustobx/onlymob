@@ -5,7 +5,28 @@ import { Prisma } from '@prisma/client';
 import { platformPrisma } from '@/lib/prisma-core';
 
 export const API_SCOPES = ['read:properties','read:leads','write:leads','export:properties','import:leads'] as const;
-export const WEBHOOK_EVENTS = ['lead.created','property.updated','reservation.created','deal.won','payment.registered','maintenance.updated','settlement.ready'] as const;
+export const WEBHOOK_EVENTS = [
+  'lead.created',
+  'lead.updated',
+  'property.created',
+  'property.updated',
+  'visit.created',
+  'reservation.created',
+  'reservation.updated',
+  'deal.created',
+  'deal.won',
+  'lease.created',
+  'lease.updated',
+  'debt.created',
+  'payment.registered',
+  'maintenance.created',
+  'maintenance.updated',
+  'document.created',
+  'document.updated',
+  'settlement.ready',
+  'communication.sent',
+  'financial.movement.created',
+] as const;
 
 function sha256(value: string) { return createHash('sha256').update(value).digest('hex'); }
 function json(value: unknown) { return JSON.stringify(value); }
@@ -49,38 +70,94 @@ function webhookSecret() {
   return secret || 'onlymob-dev-webhook-secret-not-production';
 }
 
-export async function emitWebhookEvent(tenantId: string, eventKey: string, payload: unknown) {
-  const rows = await platformPrisma.$queryRaw<Array<{ id: string; url: string; events: string }>>(Prisma.sql`
-    SELECT id, url, events FROM WebhookEndpoint WHERE tenantId = ${tenantId} AND isActive = true
+export async function queueWebhookEvent(tenantId: string, eventKey: string, payload: unknown) {
+  const rows = await platformPrisma.$queryRaw<Array<{ id: string; events: string }>>(Prisma.sql`
+    SELECT id, events FROM WebhookEndpoint WHERE tenantId = ${tenantId} AND isActive = true
   `);
   const matching = rows.filter((row) => {
     try { return (JSON.parse(row.events) as string[]).includes(eventKey); } catch { return false; }
   });
-  if (!matching.length) return { attempted: 0, delivered: 0 };
-  const secret = webhookSecret();
-  const body = json({ id: randomUUID(), event: eventKey, occurredAt: new Date().toISOString(), data: payload });
-  let delivered = 0;
+  if (!matching.length) return { queued: 0 };
 
+  const body = json({ id: randomUUID(), event: eventKey, occurredAt: new Date().toISOString(), data: payload });
   for (const endpoint of matching) {
-    const deliveryId = randomUUID();
     await platformPrisma.$executeRaw(Prisma.sql`
-      INSERT INTO WebhookDelivery (id, tenantId, endpointId, eventKey, payload, status, attempts, createdAt)
-      VALUES (${deliveryId}, ${tenantId}, ${endpoint.id}, ${eventKey}, ${body}, 'PENDING', 0, ${new Date()})
+      INSERT INTO WebhookDelivery (id, tenantId, endpointId, eventKey, payload, status, attempts, nextAttemptAt, createdAt)
+      VALUES (${randomUUID()}, ${tenantId}, ${endpoint.id}, ${eventKey}, ${body}, 'PENDING', 0, ${new Date()}, ${new Date()})
     `);
+  }
+  return { queued: matching.length };
+}
+
+export async function dispatchPendingWebhooks(input: { tenantId?: string | null; limit?: number } = {}) {
+  const limit = Math.max(1, Math.min(input.limit || 50, 200));
+  const secret = webhookSecret();
+  const tenantFilter = input.tenantId ? Prisma.sql`AND d.tenantId = ${input.tenantId}` : Prisma.sql``;
+  const rows = await platformPrisma.$queryRaw<Array<{
+    id: string;
+    tenantId: string;
+    endpointId: string;
+    eventKey: string;
+    payload: string;
+    attempts: number;
+    url: string;
+  }>>(Prisma.sql`
+    SELECT d.id, d.tenantId, d.endpointId, d.eventKey, d.payload, d.attempts, e.url
+    FROM WebhookDelivery d
+    JOIN WebhookEndpoint e ON e.id = d.endpointId AND e.tenantId = d.tenantId
+    WHERE e.isActive = true
+      AND d.status IN ('PENDING','FAILED')
+      AND d.attempts < 5
+      AND (d.nextAttemptAt IS NULL OR d.nextAttemptAt <= NOW(3))
+      ${tenantFilter}
+    ORDER BY d.createdAt ASC
+    LIMIT ${limit}
+  `);
+
+  let delivered = 0;
+  let failed = 0;
+  for (const row of rows) {
+    const attempt = row.attempts + 1;
     if (!secret) {
-      await platformPrisma.$executeRaw(Prisma.sql`UPDATE WebhookDelivery SET status='FAILED', attempts=1, lastError='INTEGRATION_WEBHOOK_SECRET no configurado' WHERE id=${deliveryId}`);
+      failed += 1;
+      await platformPrisma.$executeRaw(Prisma.sql`
+        UPDATE WebhookDelivery SET status='FAILED', attempts=${attempt}, lastError='INTEGRATION_WEBHOOK_SECRET no configurado', nextAttemptAt=${new Date(Date.now() + 15 * 60_000)} WHERE id=${row.id}
+      `);
       continue;
     }
+
     try {
-      const signature = createHmac('sha256', secret).update(body).digest('hex');
-      const response = await fetch(endpoint.url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-onlymob-event': eventKey, 'x-onlymob-signature': `sha256=${signature}` }, body, signal: AbortSignal.timeout(8000) });
+      const signature = createHmac('sha256', secret).update(row.payload).digest('hex');
+      const response = await fetch(row.url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-onlymob-event': row.eventKey,
+          'x-onlymob-signature': `sha256=${signature}`,
+        },
+        body: row.payload,
+        signal: AbortSignal.timeout(5000),
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       delivered += 1;
-      await platformPrisma.$executeRaw(Prisma.sql`UPDATE WebhookDelivery SET status='DELIVERED', attempts=1, httpStatus=${response.status}, deliveredAt=${new Date()} WHERE id=${deliveryId}`);
+      await platformPrisma.$executeRaw(Prisma.sql`
+        UPDATE WebhookDelivery SET status='DELIVERED', attempts=${attempt}, httpStatus=${response.status}, deliveredAt=${new Date()}, lastError=NULL, nextAttemptAt=NULL WHERE id=${row.id}
+      `);
     } catch (error) {
+      failed += 1;
       const message = error instanceof Error ? error.message.slice(0, 500) : 'Error desconocido';
-      await platformPrisma.$executeRaw(Prisma.sql`UPDATE WebhookDelivery SET status='FAILED', attempts=1, lastError=${message} WHERE id=${deliveryId}`);
+      const retryMinutes = Math.min(60, 5 * Math.pow(2, Math.max(0, attempt - 1)));
+      await platformPrisma.$executeRaw(Prisma.sql`
+        UPDATE WebhookDelivery SET status='FAILED', attempts=${attempt}, lastError=${message}, nextAttemptAt=${new Date(Date.now() + retryMinutes * 60_000)} WHERE id=${row.id}
+      `);
     }
   }
-  return { attempted: matching.length, delivered };
+
+  return { attempted: rows.length, delivered, failed };
+}
+
+export async function emitWebhookEvent(tenantId: string, eventKey: string, payload: unknown) {
+  const queued = await queueWebhookEvent(tenantId, eventKey, payload);
+  if (!queued.queued) return { attempted: 0, delivered: 0, failed: 0 };
+  return dispatchPendingWebhooks({ tenantId, limit: queued.queued });
 }

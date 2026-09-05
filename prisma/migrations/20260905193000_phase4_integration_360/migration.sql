@@ -1,0 +1,150 @@
+CREATE TABLE `ActivityEvent` (
+  `id` VARCHAR(191) NOT NULL,
+  `tenantId` VARCHAR(191) NOT NULL,
+  `eventKey` VARCHAR(100) NOT NULL,
+  `title` VARCHAR(180) NOT NULL,
+  `description` TEXT NULL,
+  `entityType` VARCHAR(80) NOT NULL,
+  `entityId` VARCHAR(191) NULL,
+  `propertyId` VARCHAR(191) NULL,
+  `contactId` VARCHAR(191) NULL,
+  `renterId` VARCHAR(191) NULL,
+  `actorUserId` VARCHAR(191) NULL,
+  `metadata` LONGTEXT NULL,
+  `webhookQueuedAt` DATETIME(3) NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `ActivityEvent_tenant_created_idx` (`tenantId`, `createdAt`),
+  KEY `ActivityEvent_property_created_idx` (`tenantId`, `propertyId`, `createdAt`),
+  KEY `ActivityEvent_contact_created_idx` (`tenantId`, `contactId`, `createdAt`),
+  KEY `ActivityEvent_renter_created_idx` (`tenantId`, `renterId`, `createdAt`),
+  KEY `ActivityEvent_entity_idx` (`tenantId`, `entityType`, `entityId`, `createdAt`),
+  CONSTRAINT `ActivityEvent_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `ActivityEvent_propertyId_fkey` FOREIGN KEY (`propertyId`) REFERENCES `Property`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `ActivityEvent_contactId_fkey` FOREIGN KEY (`contactId`) REFERENCES `Contact`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `ActivityEvent_renterId_fkey` FOREIGN KEY (`renterId`) REFERENCES `PropertyRenter`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `ActivityEvent_actorUserId_fkey` FOREIGN KEY (`actorUserId`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `CommunicationThread` (
+  `id` VARCHAR(191) NOT NULL,
+  `tenantId` VARCHAR(191) NOT NULL,
+  `propertyId` VARCHAR(191) NULL,
+  `contactId` VARCHAR(191) NULL,
+  `renterId` VARCHAR(191) NULL,
+  `subject` VARCHAR(180) NOT NULL,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'OPEN',
+  `lastMessageAt` DATETIME(3) NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `CommunicationThread_tenant_updated_idx` (`tenantId`, `updatedAt`),
+  KEY `CommunicationThread_property_idx` (`tenantId`, `propertyId`, `updatedAt`),
+  KEY `CommunicationThread_contact_idx` (`tenantId`, `contactId`, `updatedAt`),
+  KEY `CommunicationThread_renter_idx` (`tenantId`, `renterId`, `updatedAt`),
+  CONSTRAINT `CommunicationThread_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `CommunicationThread_propertyId_fkey` FOREIGN KEY (`propertyId`) REFERENCES `Property`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `CommunicationThread_contactId_fkey` FOREIGN KEY (`contactId`) REFERENCES `Contact`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `CommunicationThread_renterId_fkey` FOREIGN KEY (`renterId`) REFERENCES `PropertyRenter`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `CommunicationMessage` (
+  `id` VARCHAR(191) NOT NULL,
+  `tenantId` VARCHAR(191) NOT NULL,
+  `threadId` VARCHAR(191) NOT NULL,
+  `channel` VARCHAR(20) NOT NULL DEFAULT 'INTERNAL',
+  `direction` VARCHAR(20) NOT NULL DEFAULT 'OUTBOUND',
+  `senderUserId` VARCHAR(191) NULL,
+  `audienceType` VARCHAR(20) NOT NULL DEFAULT 'TENANT',
+  `recipientRefId` VARCHAR(191) NULL,
+  `recipientAddress` VARCHAR(255) NULL,
+  `body` TEXT NOT NULL,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'QUEUED',
+  `externalId` VARCHAR(191) NULL,
+  `failureMessage` VARCHAR(500) NULL,
+  `metadata` LONGTEXT NULL,
+  `sentAt` DATETIME(3) NULL,
+  `deliveredAt` DATETIME(3) NULL,
+  `readAt` DATETIME(3) NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `CommunicationMessage_tenant_created_idx` (`tenantId`, `createdAt`),
+  KEY `CommunicationMessage_thread_created_idx` (`threadId`, `createdAt`),
+  KEY `CommunicationMessage_queue_idx` (`status`, `channel`, `createdAt`),
+  KEY `CommunicationMessage_recipient_idx` (`tenantId`, `audienceType`, `recipientRefId`, `createdAt`),
+  CONSTRAINT `CommunicationMessage_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `CommunicationMessage_threadId_fkey` FOREIGN KEY (`threadId`) REFERENCES `CommunicationThread`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `CommunicationMessage_senderUserId_fkey` FOREIGN KEY (`senderUserId`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `FinancialAccount` (
+  `id` VARCHAR(191) NOT NULL,
+  `tenantId` VARCHAR(191) NOT NULL,
+  `name` VARCHAR(120) NOT NULL,
+  `type` VARCHAR(30) NOT NULL DEFAULT 'BANK',
+  `currency` VARCHAR(10) NOT NULL DEFAULT 'ARS',
+  `bankName` VARCHAR(120) NULL,
+  `alias` VARCHAR(120) NULL,
+  `cbu` VARCHAR(40) NULL,
+  `isActive` BOOLEAN NOT NULL DEFAULT true,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `FinancialAccount_tenant_active_idx` (`tenantId`, `isActive`),
+  CONSTRAINT `FinancialAccount_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `FinancialMovement` (
+  `id` VARCHAR(191) NOT NULL,
+  `tenantId` VARCHAR(191) NOT NULL,
+  `accountId` VARCHAR(191) NOT NULL,
+  `type` VARCHAR(30) NOT NULL,
+  `amount` DECIMAL(14,2) NOT NULL,
+  `currency` VARCHAR(10) NOT NULL DEFAULT 'ARS',
+  `concept` VARCHAR(180) NOT NULL,
+  `propertyId` VARCHAR(191) NULL,
+  `contactId` VARCHAR(191) NULL,
+  `renterId` VARCHAR(191) NULL,
+  `debtId` VARCHAR(191) NULL,
+  `paymentId` VARCHAR(191) NULL,
+  `propertyExpenseId` VARCHAR(191) NULL,
+  `ownerSettlementId` VARCHAR(191) NULL,
+  `reference` VARCHAR(160) NULL,
+  `reconciliationStatus` VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  `notes` TEXT NULL,
+  `occurredAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `FinancialMovement_payment_key` (`tenantId`, `paymentId`),
+  KEY `FinancialMovement_tenant_date_idx` (`tenantId`, `occurredAt`),
+  KEY `FinancialMovement_account_date_idx` (`accountId`, `occurredAt`),
+  KEY `FinancialMovement_property_idx` (`tenantId`, `propertyId`, `occurredAt`),
+  KEY `FinancialMovement_reconciliation_idx` (`tenantId`, `reconciliationStatus`, `occurredAt`),
+  CONSTRAINT `FinancialMovement_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `FinancialMovement_accountId_fkey` FOREIGN KEY (`accountId`) REFERENCES `FinancialAccount`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `FinancialMovement_propertyId_fkey` FOREIGN KEY (`propertyId`) REFERENCES `Property`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `FinancialMovement_contactId_fkey` FOREIGN KEY (`contactId`) REFERENCES `Contact`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `FinancialMovement_renterId_fkey` FOREIGN KEY (`renterId`) REFERENCES `PropertyRenter`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `FinancialMovement_debtId_fkey` FOREIGN KEY (`debtId`) REFERENCES `Debt`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `FinancialMovement_paymentId_fkey` FOREIGN KEY (`paymentId`) REFERENCES `Payment`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `FinancialMovement_propertyExpenseId_fkey` FOREIGN KEY (`propertyExpenseId`) REFERENCES `PropertyExpense`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `FinancialMovement_ownerSettlementId_fkey` FOREIGN KEY (`ownerSettlementId`) REFERENCES `OwnerSettlement`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+ALTER TABLE `Document`
+  ADD COLUMN `workflowStatus` VARCHAR(20) NOT NULL DEFAULT 'ARCHIVED',
+  ADD COLUMN `version` INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN `sentAt` DATETIME(3) NULL,
+  ADD COLUMN `viewedAt` DATETIME(3) NULL,
+  ADD COLUMN `signedAt` DATETIME(3) NULL,
+  ADD COLUMN `archivedAt` DATETIME(3) NULL,
+  ADD COLUMN `signatureProvider` VARCHAR(80) NULL,
+  ADD COLUMN `signatureExternalId` VARCHAR(191) NULL,
+  ADD COLUMN `workflowMetadata` LONGTEXT NULL;
+
+CREATE INDEX `Document_tenant_workflow_idx` ON `Document` (`tenantId`, `workflowStatus`, `uploadedAt`);
+
+ALTER TABLE `WebhookDelivery`
+  ADD COLUMN `nextAttemptAt` DATETIME(3) NULL;
+
+CREATE INDEX `WebhookDelivery_retry_idx` ON `WebhookDelivery` (`status`, `nextAttemptAt`, `createdAt`);

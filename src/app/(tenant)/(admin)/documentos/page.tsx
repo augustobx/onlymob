@@ -1,22 +1,25 @@
 import { Header } from '@/components/layout/header';
 import { getDocumentCenterDataAction } from '@/actions/documents';
+import { getDocumentWorkflowAction } from '@/actions/document-workflow';
 import { DocumentCenterClient } from './document-center-client';
+import { DocumentWorkflowPanel } from './document-workflow-panel';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DocumentsPage() {
-  const data = await getDocumentCenterDataAction();
+  const [data, workflow] = await Promise.all([
+    getDocumentCenterDataAction(),
+    getDocumentWorkflowAction(),
+  ]);
   const serializedData = JSON.parse(JSON.stringify(data));
 
   return (
     <div>
-      <Header
-        title="Documentos & Plantillas"
-        subtitle="Repositorio central, generación de PDFs y documentos vinculados a cada operación"
-      />
-      <div className="p-8 max-w-7xl mx-auto">
+      <Header title="Documentos & Plantillas" subtitle="Repositorio, PDFs, versiones, trazabilidad y firma" />
+      <main className="app-page"><div className="page-container">
+        <DocumentWorkflowPanel documents={workflow as any[]} />
         <DocumentCenterClient data={serializedData} />
-      </div>
+      </div></main>
     </div>
   );
 }

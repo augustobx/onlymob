@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { requireTenantAdmin } from '@/lib/tenant-guard';
+import { requirePermission } from '@/lib/permissions';
 import {
   countUnreadInternalNotifications,
   listInternalNotifications,
@@ -10,7 +10,7 @@ import {
 } from '@/lib/notifications';
 
 export async function getNotificationsAction(limit = 60) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('notifications', 'read');
   const [notifications, unreadCount] = await Promise.all([
     listInternalNotifications({ tenantId: tenant.id, userId: session.userId, limit }),
     countUnreadInternalNotifications(tenant.id, session.userId),
@@ -20,7 +20,7 @@ export async function getNotificationsAction(limit = 60) {
 }
 
 export async function markNotificationReadAction(formData: FormData) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('notifications', 'update');
   const notificationId = String(formData.get('notificationId') || '');
   if (!notificationId) return;
 
@@ -34,7 +34,7 @@ export async function markNotificationReadAction(formData: FormData) {
 }
 
 export async function markAllNotificationsReadAction() {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('notifications', 'update');
   await markAllInternalNotificationsRead(tenant.id, session.userId);
   revalidatePath('/notificaciones');
 }

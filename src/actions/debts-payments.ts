@@ -3,14 +3,15 @@
 import { revalidatePath } from 'next/cache';
 import { platformPrisma } from '@/lib/prisma-core';
 import { numberToWords } from '@/lib/number-to-words';
-import { auditTenantAction, requireTenantAdmin } from '@/lib/tenant-guard';
+import { auditTenantAction } from '@/lib/tenant-guard';
+import { requirePermission } from '@/lib/permissions';
 
 export async function getDebtsAction(filters?: {
   status?: string;
   type?: string;
   renterId?: string;
 }) {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('collections', 'read');
   const where: any = { tenantId: tenant.id };
 
   if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
@@ -78,7 +79,7 @@ export async function recordPaymentAction(data: {
   reference?: string;
   notes?: string;
 }) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('collections', 'create');
   if (!Number.isFinite(data.amount) || data.amount <= 0) throw new Error('El importe debe ser mayor a cero.');
 
   const result = await platformPrisma.$transaction(async (tx) => {
@@ -140,12 +141,13 @@ export async function recordPaymentAction(data: {
   });
 
   revalidatePath('/cobranzas');
+  revalidatePath('/finanzas');
   revalidatePath('/dashboard');
   return { success: true, paymentId: result.payment.id, receiptNumber: result.receiptNumber };
 }
 
 export async function getReceiptDetailsAction(paymentId: string) {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('collections', 'read');
 
   const payment = await platformPrisma.payment.findFirst({
     where: { id: paymentId, tenantId: tenant.id },
@@ -204,7 +206,7 @@ export async function getReceiptDetailsAction(paymentId: string) {
 }
 
 export async function getDashboardMetricsAction() {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('dashboard', 'read');
   const now = new Date();
   const in10Days = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);

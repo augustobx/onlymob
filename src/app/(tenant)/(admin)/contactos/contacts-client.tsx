@@ -1,8 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
 import { archiveContactAction, saveContactAction } from '@/actions/contacts';
-import { Building2, Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react';
+import { Building2, ExternalLink, Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react';
 
 const ROLE_OPTIONS = [
   ['OWNER', 'Propietario'],
@@ -61,7 +62,7 @@ export function ContactsClient({ initialContacts }: { initialContacts: ContactRo
     const q = search.trim().toLowerCase();
     if (!q) return initialContacts;
     return initialContacts.filter((contact) =>
-      [contact.firstName, contact.lastName, contact.companyName, contact.documentNumber, contact.email, contact.phone]
+      [contact.firstName, contact.lastName, contact.companyName, contact.documentNumber, contact.cuit, contact.email, contact.phone]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(q))
     );
@@ -152,9 +153,9 @@ export function ContactsClient({ initialContacts }: { initialContacts: ContactRo
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
         <div className="relative max-w-md w-full">
           <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre, DNI, email o teléfono..." className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre, DNI, CUIT, email o teléfono..." className="form-input pl-9" />
         </div>
-        <button onClick={() => { setForm(emptyForm); setError(''); setShowForm(true); }} className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold">
+        <button onClick={() => { setForm(emptyForm); setError(''); setShowForm(true); }} className="btn-primary">
           <Plus className="w-4 h-4" /> Nuevo contacto
         </button>
       </div>
@@ -162,7 +163,7 @@ export function ContactsClient({ initialContacts }: { initialContacts: ContactRo
       {error && <div className="p-3 rounded-lg bg-rose-50 border border-rose-100 text-sm text-rose-700">{error}</div>}
 
       {showForm && (
-        <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-5">
+        <form onSubmit={submit} className="section-card p-5 space-y-5">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-bold text-slate-900">{form.id ? 'Editar contacto' : 'Nuevo contacto'}</h2>
@@ -187,10 +188,10 @@ export function ContactsClient({ initialContacts }: { initialContacts: ContactRo
           </div>
 
           <div>
-            <span className="block text-xs font-semibold text-slate-700 mb-2">Roles</span>
+            <span className="form-label">Roles</span>
             <div className="flex flex-wrap gap-2">
               {ROLE_OPTIONS.map(([value, label]) => (
-                <button key={value} type="button" onClick={() => toggleRole(value)} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${form.roles.includes(value) ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-500'}`}>
+                <button key={value} type="button" onClick={() => toggleRole(value)} className={`status-pill ${form.roles.includes(value) ? 'status-pill--info' : 'status-pill--neutral'}`}>
                   {label}
                 </button>
               ))}
@@ -198,40 +199,39 @@ export function ContactsClient({ initialContacts }: { initialContacts: ContactRo
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Notas internas</label>
-            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            <label className="form-label">Notas internas</label>
+            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="form-input" />
           </div>
 
           <div className="flex justify-end">
-            <button disabled={isPending} type="submit" className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold">
-              {isPending ? 'Guardando...' : 'Guardar contacto'}
-            </button>
+            <button disabled={isPending} type="submit" className="btn-primary">{isPending ? 'Guardando...' : 'Guardar contacto'}</button>
           </div>
         </form>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+      <div className="section-card overflow-hidden">
         <div className="divide-y divide-slate-100">
           {contacts.length === 0 ? (
             <div className="py-12 text-center text-sm text-slate-400">No hay contactos para mostrar.</div>
           ) : contacts.map((contact) => (
-            <div key={contact.id} className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div key={contact.id} className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors">
               <div className="flex items-start gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center flex-shrink-0">
                   {contact.companyName ? <Building2 className="w-5 h-5" /> : <UserRound className="w-5 h-5" />}
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold text-sm text-slate-900">{contact.firstName} {contact.lastName}</span>
-                    {contact.roles.map((role) => <span key={role} className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-semibold text-slate-600">{ROLE_OPTIONS.find(([value]) => value === role)?.[1] || role}</span>)}
+                    <Link href={`/contactos/${contact.id}`} className="font-bold text-sm text-slate-900 hover:text-indigo-600">{contact.firstName} {contact.lastName}</Link>
+                    {contact.roles.map((role) => <span key={role} className="status-pill status-pill--neutral">{ROLE_OPTIONS.find(([value]) => value === role)?.[1] || role}</span>)}
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">{[contact.companyName, contact.documentNumber && `Doc. ${contact.documentNumber}`, contact.phone, contact.email].filter(Boolean).join(' · ') || 'Sin datos adicionales'}</p>
+                  <p className="text-xs text-slate-500 mt-1">{[contact.companyName, contact.documentNumber && `Doc. ${contact.documentNumber}`, contact.cuit && `CUIT ${contact.cuit}`, contact.phone, contact.email].filter(Boolean).join(' · ') || 'Sin datos adicionales'}</p>
                   {contact.ownedProperties.length > 0 && <p className="text-[11px] text-indigo-600 mt-1 font-medium">{contact.ownedProperties.length} propiedad/es asociada/s</p>}
                 </div>
               </div>
               <div className="flex items-center gap-2 self-end lg:self-auto">
-                <button onClick={() => edit(contact)} className="p-2 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50" title="Editar"><Pencil className="w-4 h-4" /></button>
-                <button onClick={() => archive(contact.id)} className="p-2 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50" title="Archivar"><Trash2 className="w-4 h-4" /></button>
+                <Link href={`/contactos/${contact.id}`} className="icon-action" title="Ficha 360"><ExternalLink className="w-4 h-4" /></Link>
+                <button onClick={() => edit(contact)} className="icon-action" title="Editar"><Pencil className="w-4 h-4" /></button>
+                <button onClick={() => archive(contact.id)} className="icon-action hover:!text-rose-600 hover:!border-rose-200 hover:!bg-rose-50" title="Archivar"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
           ))}
@@ -244,8 +244,8 @@ export function ContactsClient({ initialContacts }: { initialContacts: ContactRo
 function Field({ label, value, onChange, required, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
-      <input type={type} required={required} value={value} onChange={(e) => onChange(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+      <label className="form-label">{label}</label>
+      <input type={type} required={required} value={value} onChange={(e) => onChange(e.target.value)} className="form-input" />
     </div>
   );
 }

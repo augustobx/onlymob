@@ -1,28 +1,20 @@
 import { redirect } from 'next/navigation';
 import { getTenantAdminContext } from '@/lib/tenant-guard';
 import { Sidebar } from '@/components/layout/sidebar';
+import { MobileNav } from '@/components/layout/mobile-nav';
 import { EntitySelectEnhancer } from '@/components/ui/entity-select-enhancer';
 
-export default async function TenantAdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function TenantAdminLayout({ children }: { children: React.ReactNode }) {
   const context = await getTenantAdminContext();
-
-  if (!context) {
-    redirect('/login');
-  }
-
+  if (!context) redirect('/login');
   const { tenant, session } = context;
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="admin-shell">
       <EntitySelectEnhancer />
-      <Sidebar tenantName={tenant.name} userName={session.name} />
-      <div className="flex-1 flex flex-col min-w-0">
-        <main className="flex-1">{children}</main>
-      </div>
+      <div className="hidden lg:block admin-shell__sidebar"><Sidebar tenantName={tenant.name} userName={session.name} /></div>
+      <div className="admin-shell__content"><main className="min-h-screen pb-20 lg:pb-0">{children}</main></div>
+      <MobileNav />
     </div>
   );
 }
