@@ -14,8 +14,8 @@ import {
   X,
 } from 'lucide-react';
 import { recordPaymentAction } from '@/actions/debts-payments';
-import { applyPropertyLeaseIncreaseAction } from '@/actions/property-360-operations';
-import { adjustmentDisplayLabel } from '@/lib/lease-labels';
+import { applyPropertyLeaseIncreaseAction, previewPropertyLeaseIncreaseAction } from '@/actions/property-360-operations';
+import { adjustmentDisplayLabel, adjustmentMethodLabel } from '@/lib/lease-labels';
 
 interface DebtItem {
   id: string;
@@ -34,8 +34,14 @@ interface LeaseInfo {
   increasePercent?: number | null;
 }
 
+type IncreasePreview = Awaited<ReturnType<typeof previewPropertyLeaseIncreaseAction>>;
+
 function money(value: number, currency: string) {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency, maximumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat('es-AR', { style: 'currency', currency, maximumFractionDigits: 2 }).format(value || 0);
+}
+
+function decimal(value: number | null | undefined) {
+  return value == null ? '—' : new Intl.NumberFormat('es-AR', { minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(value);
 }
 
 export function Property360Actions({
@@ -54,6 +60,7 @@ export function Property360Actions({
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [increaseOpen, setIncreaseOpen] = useState(false);
   const [error, setError] = useState('');
+  const [increasePreview, setIncreasePreview] = useState<IncreasePreview | null>(null);
 
   const sortedDebts = useMemo(() => [...openDebts].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()), [openDebts]);
   const [debtId, setDebtId] = useState(sortedDebts[0]?.id || '');
@@ -62,8 +69,14 @@ export function Property360Actions({
 
   const defaultPercent = lease?.increasePercent && lease.increasePercent > 0 ? lease.increasePercent : 0;
   const [percent, setPercent] = useState(defaultPercent);
-  const [indexUsed, setIndexUsed] = useState(lease ? adjustmentDisplayLabel(lease.adjustmentIndex, lease.adjustmentMethod) : 'Ajuste contractual');
-  const previewRent = lease ? Math.round(lease.currentRent * (1 + (Number(percent) || 0) / 100) * 100) / 100 : 0;
+  const [manualNewRent, setManualNewRent] = useState(0);
+  const [indexUsed, setIndexUsed] = useState(lease ? adjustmentDisplayLabel(lease.adjustmentIndex, lease.adjustmentMethod) : 'Manual');
+  const isIcl = lease?.adjustmentMethod === 'ICL';
+  const manualPreviewRent = lease
+    ? manualNewRent > 0
+      ? manualNewRent
+      : Math.round(lease.currentRent * (1 + (Number(percent) || 0) / 100) * 100) / 100
+    : 0;
 
   function openPayment() {
     const first = sortedDebts[0];
@@ -78,6 +91,26 @@ export function Property360Actions({
     setDebtId(nextId);
     const next = sortedDebts.find((item) => item.id === nextId);
     setAmount(next?.remaining || 0);
+  }
+
+  function openIncrease() {
+    if (!lease) return;
+    setError('');
+    setIncreasePreview(null);
+    setManualNewRent(0);
+    setPercent(lease.increasePercent && lease.increasePercent > 0 ? lease.increasePercent : 0);
+    setIndexUsed(adjustmentDisplayLabel(lease.adjustmentIndex, lease.adjustmentMethod));
+    setIncreaseOpen(true);
+
+    if (lease.adjustmentMethod === 'ICL') {
+      startTransition(async () => {
+        try {
+          setIncreasePreview(await previewPropertyLeaseIncreaseAction(lease.id));
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'No se pudo consultar el ICL oficial.');
+        }
+      });
+    }
   }
 
   function submitPayment(event: React.FormEvent<HTMLFormElement>) {
@@ -108,7 +141,12 @@ export function Property360Actions({
     setError('');
     startTransition(async () => {
       try {
-        await applyPropertyLeaseIncreaseAction({ leaseId: lease.id, percent: Number(percent), indexUsed });
+        await applyPropertyLeaseIncreaseAction({
+          leaseId: lease.id,
+          manualPercent: percent,
+          manualNewRent,
+          indexUsed,
+        });
         setIncreaseOpen(false);
         router.refresh();
       } catch (e) {
@@ -125,7 +163,7 @@ export function Property360Actions({
           {sortedDebts.length ? 'Registrar pago' : 'Al día'}
         </button>
 
-        <button type="button" onClick={() => { setError(''); setIncreaseOpen(true); }} disabled={!lease || isPending} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-45">
+        <button type="button" onClick={openIncrease} disabled={!lease || isPending} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-45">
           <CalendarClock className="h-4 w-4" /> Aplicar aumento
         </button>
 
@@ -166,19 +204,47 @@ export function Property360Actions({
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-              <div><p className="text-xs font-extrabold uppercase tracking-[.12em] text-amber-600">Contrato vigente</p><h3 className="mt-1 text-xl font-black text-slate-950">Aplicar aumento</h3></div>
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[.12em] text-amber-600">{adjustmentMethodLabel(lease.adjustmentMethod)}</p>
+                <h3 className="mt-1 text-xl font-black text-slate-950">Aplicar aumento</h3>
+              </div>
               <button onClick={() => setIncreaseOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-5 w-5" /></button>
             </div>
             <form onSubmit={submitIncrease} className="space-y-5 p-6">
               {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{error}</div>}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-slate-100 p-4"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Alquiler actual</p><p className="mt-1 text-xl font-black text-slate-950">{money(lease.currentRent, currency)}</p></div>
-                <div className="rounded-2xl bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">Nuevo alquiler</p><p className="mt-1 text-xl font-black text-amber-950">{money(previewRent, currency)}</p></div>
-              </div>
-              <div><label className="mb-1.5 block text-xs font-bold text-slate-600">Porcentaje de aumento</label><div className="relative"><input type="number" min="0.01" max="1000" step="0.01" value={percent} onChange={(e) => setPercent(Number(e.target.value))} required className="w-full rounded-xl border border-slate-200 px-3 py-2.5 pr-10 text-sm font-bold text-slate-950" /><span className="absolute right-3 top-2.5 text-sm font-bold text-slate-400">%</span></div></div>
-              <div><label className="mb-1.5 block text-xs font-bold text-slate-600">Índice / motivo</label><input value={indexUsed} onChange={(e) => setIndexUsed(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900" placeholder="ICL, IPC, porcentaje contractual..." /></div>
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Al confirmar se registra el cambio en el historial del contrato y el próximo ajuste queda programado automáticamente dentro de <strong>{lease.updatePeriodMonths} meses</strong>.</div>
-              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setIncreaseOpen(false)} className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100">Cancelar</button><button disabled={isPending || percent <= 0} className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"><CalendarClock className="h-4 w-4" />{isPending ? 'Aplicando...' : 'Aplicar aumento'}</button></div>
+
+              {isIcl ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl bg-slate-100 p-4"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Alquiler actual</p><p className="mt-1 text-xl font-black text-slate-950">{money(lease.currentRent, currency)}</p></div>
+                    <div className="rounded-2xl bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">Nuevo por ICL</p><p className="mt-1 text-xl font-black text-amber-950">{increasePreview?.newRent != null ? money(increasePreview.newRent, currency) : 'Calculando…'}</p></div>
+                  </div>
+                  {increasePreview?.method === 'ICL' && (
+                    <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div><span className="block text-[10px] font-black uppercase text-indigo-500">ICL base · {increasePreview.baseDate}</span><strong className="mt-1 block text-lg text-indigo-950">{decimal(increasePreview.baseIcl)}</strong></div>
+                        <div><span className="block text-[10px] font-black uppercase text-indigo-500">ICL actual · {increasePreview.currentDate}</span><strong className="mt-1 block text-lg text-indigo-950">{decimal(increasePreview.currentIcl)}</strong></div>
+                      </div>
+                      <p className="mt-3 border-t border-indigo-200 pt-3 text-sm font-bold text-indigo-900">Variación calculada: {Number(increasePreview.percent).toFixed(2)}%</p>
+                    </div>
+                  )}
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">El valor se vuelve a consultar al BCRA al confirmar. No se usa un porcentaje escrito manualmente.</div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl bg-slate-100 p-4"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Alquiler actual</p><p className="mt-1 text-xl font-black text-slate-950">{money(lease.currentRent, currency)}</p></div>
+                    <div className="rounded-2xl bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">Nuevo alquiler</p><p className="mt-1 text-xl font-black text-amber-950">{money(manualPreviewRent, currency)}</p></div>
+                  </div>
+                  <div><label className="mb-1.5 block text-xs font-bold text-slate-600">Nuevo alquiler</label><input type="number" min={lease.currentRent + 0.01} step="0.01" value={manualNewRent || ''} onChange={(e) => setManualNewRent(Number(e.target.value) || 0)} placeholder="Podés ingresar directamente el nuevo valor" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-950" /></div>
+                  <div className="text-center text-[10px] font-black uppercase tracking-wider text-slate-400">o calcular por porcentaje</div>
+                  <div><label className="mb-1.5 block text-xs font-bold text-slate-600">Porcentaje de aumento</label><div className="relative"><input type="number" min="0" max="1000" step="0.01" value={percent || ''} onChange={(e) => { setPercent(Number(e.target.value) || 0); setManualNewRent(0); }} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 pr-10 text-sm font-bold text-slate-950" /><span className="absolute right-3 top-2.5 text-sm font-bold text-slate-400">%</span></div></div>
+                  <div><label className="mb-1.5 block text-xs font-bold text-slate-600">Motivo / referencia</label><input value={indexUsed} onChange={(e) => setIndexUsed(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900" placeholder="Ajuste manual, acuerdo contractual..." /></div>
+                </>
+              )}
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">Al confirmar se registra el cambio en el historial y el próximo aumento queda programado automáticamente dentro de <strong>{lease.updatePeriodMonths} meses</strong>.</div>
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setIncreaseOpen(false)} className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100">Cancelar</button><button disabled={isPending || (isIcl ? !increasePreview?.newRent : manualPreviewRent <= lease.currentRent)} className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"><CalendarClock className="h-4 w-4" />{isPending ? 'Aplicando...' : isIcl ? 'Aplicar aumento ICL' : 'Aplicar aumento'}</button></div>
             </form>
           </div>
         </div>
