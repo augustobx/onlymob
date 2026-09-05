@@ -186,13 +186,20 @@ export function PropertyTable({ initialProperties }: { initialProperties: Proper
     });
   }
 
+  const summaryCards = [
+    { label: 'Total', value: initialProperties.length, icon: Building, tone: 'text-indigo-600 bg-indigo-50' },
+    { label: 'Alquiladas', value: summary.rented, icon: KeyRound, tone: 'text-emerald-700 bg-emerald-50' },
+    { label: 'Disponibles', value: summary.available, icon: Building, tone: 'text-sky-700 bg-sky-50' },
+    { label: 'Con saldo', value: summary.withDebt, icon: CircleDollarSign, tone: summary.withDebt ? 'text-rose-700 bg-rose-50' : 'text-slate-600 bg-slate-100' },
+  ];
+
   return (
     <div className="space-y-4">
-      <section className="property-summary">
-        <div className="property-summary__item"><Building className="w-4 h-4" /><div><span>Total</span><strong>{initialProperties.length}</strong></div></div>
-        <div className="property-summary__item"><KeyRound className="w-4 h-4" /><div><span>Alquiladas</span><strong>{summary.rented}</strong></div></div>
-        <div className="property-summary__item"><Building className="w-4 h-4" /><div><span>Disponibles</span><strong>{summary.available}</strong></div></div>
-        <div className={`property-summary__item ${summary.withDebt ? 'is-alert' : ''}`}><CircleDollarSign className="w-4 h-4" /><div><span>Con saldo</span><strong>{summary.withDebt}</strong></div></div>
+      <section className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        {summaryCards.map((item) => {
+          const Icon = item.icon;
+          return <div key={item.label} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-xs"><div className={`w-9 h-9 rounded-lg flex items-center justify-center ${item.tone}`}><Icon className="w-4 h-4" /></div><div><p className="text-[9px] uppercase tracking-[.1em] font-bold text-slate-400">{item.label}</p><p className="text-lg leading-none font-extrabold text-slate-900 mt-1">{item.value}</p></div></div>;
+        })}
       </section>
 
       <section className="property-toolbar">
