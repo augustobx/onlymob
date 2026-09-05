@@ -69,7 +69,6 @@ function getFieldLabel(select: HTMLSelectElement) {
 function inferEntity(select: HTMLSelectElement): EntityKind | null {
   const explicit = select.dataset.entitySearch as EntityKind | undefined;
   if (explicit) return explicit;
-
   if (select.multiple) return null;
 
   const label = normalize(getFieldLabel(select));
@@ -131,6 +130,7 @@ function searchPlaceholder(label: string, entity: EntityKind) {
     debt: 'deuda por inquilino, DNI o propiedad',
     garage: 'cochera por nombre o dirección',
   };
+
   return `Buscar ${labels[entity]}...`;
 }
 
@@ -186,15 +186,16 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
 
   function positionDropdown() {
     if (dropdown.classList.contains('hidden')) return;
+
     const rect = wrapper.getBoundingClientRect();
-    const maxHeight = 304;
     const availableBelow = window.innerHeight - rect.bottom - 12;
     const showAbove = availableBelow < 180 && rect.top > availableBelow;
+    const availableHeight = showAbove ? rect.top - 12 : availableBelow;
 
     dropdown.style.left = `${Math.max(8, rect.left)}px`;
     dropdown.style.width = `${Math.max(240, rect.width)}px`;
-    dropdown.style.maxWidth = `calc(100vw - ${Math.max(16, rect.left + 8)}px)`;
-    dropdown.style.maxHeight = `${Math.min(maxHeight, showAbove ? rect.top - 12 : availableBelow)}px`;
+    dropdown.style.maxWidth = 'calc(100vw - 16px)';
+    dropdown.style.maxHeight = `${Math.max(120, Math.min(304, availableHeight))}px`;
     dropdown.style.top = showAbove ? 'auto' : `${rect.bottom + 4}px`;
     dropdown.style.bottom = showAbove ? `${window.innerHeight - rect.top + 4}px` : 'auto';
   }
@@ -202,6 +203,23 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
   function closeDropdown() {
     dropdown.classList.add('hidden');
     input.setAttribute('aria-expanded', 'false');
+  }
+
+  function refreshActiveStyles() {
+    dropdown.querySelectorAll<HTMLButtonElement>('button[data-result-index]').forEach((button) => {
+      const index = Number(button.dataset.resultIndex);
+      button.className = `w-full text-left px-3 py-2 rounded-lg flex flex-col transition-colors ${
+        index === activeIndex ? 'bg-indigo-50' : 'hover:bg-slate-50'
+      }`;
+    });
+  }
+
+  function choose(result: SearchResult) {
+    selectedValue = result.value;
+    nativeSetSelectValue(select, result.value);
+    input.value = result.label;
+    input.setCustomValidity('');
+    closeDropdown();
   }
 
   function renderResults(results: SearchResult[]) {
@@ -222,7 +240,9 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
         const button = document.createElement('button');
         button.type = 'button';
         button.dataset.resultIndex = String(index);
-        button.className = `w-full text-left px-3 py-2 rounded-lg flex flex-col transition-colors ${index === activeIndex ? 'bg-indigo-50' : 'hover:bg-slate-50'}`;
+        button.className = `w-full text-left px-3 py-2 rounded-lg flex flex-col transition-colors ${
+          index === activeIndex ? 'bg-indigo-50' : 'hover:bg-slate-50'
+        }`;
 
         const title = document.createElement('span');
         title.className = 'block text-sm font-semibold text-slate-800 truncate';
@@ -238,7 +258,7 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
 
         button.addEventListener('mouseenter', () => {
           activeIndex = index;
-          renderResults(currentResults);
+          refreshActiveStyles();
         });
         button.addEventListener('mousedown', (event) => {
           event.preventDefault();
@@ -246,6 +266,7 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
         });
         list.appendChild(button);
       });
+
       dropdown.appendChild(list);
     }
 
@@ -254,25 +275,22 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
     positionDropdown();
   }
 
-  function choose(result: SearchResult) {
-    selectedValue = result.value;
-    nativeSetSelectValue(select, result.value);
-    input.value = result.label;
-    input.setCustomValidity('');
-    closeDropdown();
-  }
-
   async function remoteSearch(query: string) {
     abortController?.abort();
     abortController = new AbortController();
 
     try {
-      const response = await fetch(`/api/search/entities?entity=${encodeURIComponent(entity)}&q=${encodeURIComponent(query)}&limit=20`, {
-        signal: abortController.signal,
-        credentials: 'same-origin',
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        `/api/search/entities?entity=${encodeURIComponent(entity)}&q=${encodeURIComponent(query)}&limit=20`,
+        {
+          signal: abortController.signal,
+          credentials: 'same-origin',
+          cache: 'no-store',
+        }
+      );
+
       if (!response.ok) return;
+
       const payload = await response.json();
       const allowed = new Set(Array.from(select.options).map((option) => option.value).filter(Boolean));
       const remote: SearchResult[] = Array.isArray(payload.results)
@@ -300,6 +318,7 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
   function handleFocus() {
     if (blurTimer) clearTimeout(blurTimer);
     input.select();
+    activeIndex = 0;
     runSearch('');
   }
 
@@ -308,6 +327,7 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
       selectedValue = '';
       nativeSetSelectValue(select, '');
     }
+
     input.setCustomValidity(input.value.trim() ? 'Elegí una opción de los resultados.' : '');
     activeIndex = 0;
     runSearch(input.value);
@@ -316,12 +336,8 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
   function handleBlur() {
     blurTimer = setTimeout(() => {
       closeDropdown();
-      if (!select.value) {
-        input.value = '';
-        input.setCustomValidity('');
-      } else {
-        input.value = selectedLabel(select);
-      }
+      input.setCustomValidity('');
+      input.value = select.value ? selectedLabel(select) : '';
     }, 140);
   }
 
@@ -329,12 +345,16 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       activeIndex = Math.min(activeIndex + 1, Math.max(0, currentResults.length - 1));
-      renderResults(currentResults);
+      refreshActiveStyles();
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       activeIndex = Math.max(activeIndex - 1, 0);
-      renderResults(currentResults);
-    } else if (event.key === 'Enter' && currentResults[activeIndex] && !dropdown.classList.contains('hidden')) {
+      refreshActiveStyles();
+    } else if (
+      event.key === 'Enter' &&
+      currentResults[activeIndex] &&
+      !dropdown.classList.contains('hidden')
+    ) {
       event.preventDefault();
       choose(currentResults[activeIndex]);
     } else if (event.key === 'Escape') {
@@ -360,6 +380,7 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
     abortController?.abort();
     if (debounceTimer) clearTimeout(debounceTimer);
     if (blurTimer) clearTimeout(blurTimer);
+
     input.removeEventListener('focus', handleFocus);
     input.removeEventListener('input', handleInput);
     input.removeEventListener('blur', handleBlur);
@@ -367,13 +388,16 @@ function enhanceSelect(select: HTMLSelectElement, entity: EntityKind) {
     select.removeEventListener('change', syncFromSelect);
     window.removeEventListener('resize', handleViewportChange);
     window.removeEventListener('scroll', handleViewportChange, true);
+
     dropdown.remove();
     wrapper.remove();
     select.style.display = originalDisplay;
     select.required = originalRequired;
     select.tabIndex = originalTabIndex;
+
     if (originalAriaHidden === null) select.removeAttribute('aria-hidden');
     else select.setAttribute('aria-hidden', originalAriaHidden);
+
     delete select.dataset.entitySearchEnhanced;
   };
 }
@@ -395,11 +419,11 @@ export function EntitySelectEnhancer() {
 
       document.querySelectorAll<HTMLSelectElement>('select').forEach((select) => {
         if (cleanups.has(select) || select.dataset.entitySearchEnhanced === 'true') return;
+
         const entity = inferEntity(select);
         if (!entity) return;
 
-        const cleanup = enhanceSelect(select, entity);
-        cleanups.set(select, cleanup);
+        cleanups.set(select, enhanceSelect(select, entity));
       });
     }
 
@@ -410,6 +434,7 @@ export function EntitySelectEnhancer() {
     }
 
     scan();
+
     const observer = new MutationObserver(scheduleScan);
     observer.observe(document.body, { childList: true, subtree: true });
 
