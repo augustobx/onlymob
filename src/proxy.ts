@@ -16,6 +16,7 @@ const tenantAdminPrefixes = [
   '/administracion',
   '/inquilinos',
   '/recibos',
+  '/notificaciones',
   '/ajustes',
 ];
 
@@ -68,6 +69,7 @@ export const config = {
     '/administracion/:path*',
     '/inquilinos/:path*',
     '/recibos/:path*',
+    '/notificaciones/:path*',
     '/ajustes/:path*',
     '/superadmin/:path*',
     '/portal/:path*',
