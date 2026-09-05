@@ -3,6 +3,7 @@
 import { Prisma } from '@prisma/client';
 import { platformPrisma } from '@/lib/prisma-core';
 import { requirePermission } from '@/lib/permissions';
+import { adjustmentMethodLabel } from '@/lib/lease-labels';
 
 function serialize<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -143,7 +144,15 @@ export async function getProperty360Action(propertyId: string) {
     `),
   ]);
 
-  return serialize({ property, activity, communications, financialMovements });
+  const propertyForView = {
+    ...property,
+    propertyLeases: property.propertyLeases.map((lease) => ({
+      ...lease,
+      adjustmentMethod: adjustmentMethodLabel(lease.adjustmentMethod),
+    })),
+  };
+
+  return serialize({ property: propertyForView, activity, communications, financialMovements });
 }
 
 export async function getContact360Action(contactId: string) {
