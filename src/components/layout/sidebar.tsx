@@ -19,6 +19,7 @@ import {
   Landmark,
   Wrench,
   Bell,
+  FolderOpen,
 } from 'lucide-react';
 import { logoutAdminAction } from '@/actions/auth-actions';
 
@@ -40,6 +41,7 @@ const navItems = [
   { name: 'Mantenimiento', href: '/mantenimiento', icon: Wrench },
   { name: 'Cobranzas & Pagos', href: '/cobranzas', icon: CreditCard },
   { name: 'Administración', href: '/administracion', icon: Landmark },
+  { name: 'Documentos', href: '/documentos', icon: FolderOpen },
   { name: 'Notificaciones', href: '/notificaciones', icon: Bell },
   { name: 'Configuraciones', href: '/ajustes', icon: Settings },
 ];
