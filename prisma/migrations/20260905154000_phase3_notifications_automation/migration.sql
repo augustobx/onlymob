@@ -1,10 +1,10 @@
 CREATE TABLE `NotificationLog` (
-  `id` VARCHAR(36) NOT NULL,
-  `tenantId` VARCHAR(36) NOT NULL,
+  `id` VARCHAR(191) NOT NULL,
+  `tenantId` VARCHAR(191) NOT NULL,
   `eventKey` VARCHAR(100) NOT NULL,
   `channel` VARCHAR(20) NOT NULL DEFAULT 'INTERNAL',
   `audienceType` VARCHAR(20) NOT NULL DEFAULT 'TENANT',
-  `recipientRefId` VARCHAR(36) NULL,
+  `recipientRefId` VARCHAR(191) NULL,
   `recipientAddress` VARCHAR(190) NULL,
   `title` VARCHAR(180) NOT NULL,
   `body` TEXT NOT NULL,
