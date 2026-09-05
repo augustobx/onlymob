@@ -146,6 +146,7 @@ enum AuditActorType {
   USER
   SUPERADMIN
   RENTER
+  OWNER
   SYSTEM
 }
 
@@ -513,28 +514,31 @@ model RolePermission {
 }
 
 model Contact {
-  id              String   @id @default(uuid())
-  tenantId        String
-  firstName       String   @db.VarChar(80)
-  lastName        String   @db.VarChar(80)
-  companyName     String?  @db.VarChar(160)
-  documentType    String?  @db.VarChar(20)
-  documentNumber  String?  @db.VarChar(40)
-  cuit            String?  @db.VarChar(30)
-  email           String?  @db.VarChar(120)
-  phone           String?  @db.VarChar(50)
-  alternatePhone  String?  @db.VarChar(50)
-  address         String?  @db.VarChar(255)
-  city            String?  @db.VarChar(100)
-  province        String?  @db.VarChar(100)
-  postalCode      String?  @db.VarChar(20)
-  bankAlias       String?  @db.VarChar(120)
-  bankCbu         String?  @db.VarChar(40)
-  notes           String?  @db.Text
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  archivedAt      DateTime?
+  id                       String   @id @default(uuid())
+  tenantId                 String
+  firstName                String   @db.VarChar(80)
+  lastName                 String   @db.VarChar(80)
+  companyName              String?  @db.VarChar(160)
+  documentType             String?  @db.VarChar(20)
+  documentNumber           String?  @db.VarChar(40)
+  cuit                     String?  @db.VarChar(30)
+  email                    String?  @db.VarChar(120)
+  phone                    String?  @db.VarChar(50)
+  alternatePhone           String?  @db.VarChar(50)
+  address                  String?  @db.VarChar(255)
+  city                     String?  @db.VarChar(100)
+  province                 String?  @db.VarChar(100)
+  postalCode               String?  @db.VarChar(20)
+  bankAlias                String?  @db.VarChar(120)
+  bankCbu                  String?  @db.VarChar(40)
+  ownerPortalPasswordHash  String?  @db.VarChar(255)
+  ownerPortalEnabled       Boolean  @default(false)
+  ownerPortalLastLoginAt   DateTime?
+  notes                    String?  @db.Text
+  isActive                 Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  archivedAt               DateTime?
 
   tenant                    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   roles                     ContactRole[]
@@ -555,6 +559,7 @@ model Contact {
   @@index([tenantId, lastName, firstName])
   @@index([tenantId, email])
   @@index([tenantId, documentNumber])
+  @@index([tenantId, ownerPortalEnabled])
 }
 
 model ContactRole {
