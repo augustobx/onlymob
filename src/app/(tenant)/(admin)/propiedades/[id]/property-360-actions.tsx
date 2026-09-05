@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { recordPaymentAction } from '@/actions/debts-payments';
 import { applyPropertyLeaseIncreaseAction } from '@/actions/property-360-operations';
+import { adjustmentDisplayLabel } from '@/lib/lease-labels';
 
 interface DebtItem {
   id: string;
@@ -61,7 +62,7 @@ export function Property360Actions({
 
   const defaultPercent = lease?.increasePercent && lease.increasePercent > 0 ? lease.increasePercent : 0;
   const [percent, setPercent] = useState(defaultPercent);
-  const [indexUsed, setIndexUsed] = useState(lease?.adjustmentIndex || lease?.adjustmentMethod || 'Ajuste contractual');
+  const [indexUsed, setIndexUsed] = useState(lease ? adjustmentDisplayLabel(lease.adjustmentIndex, lease.adjustmentMethod) : 'Ajuste contractual');
   const previewRent = lease ? Math.round(lease.currentRent * (1 + (Number(percent) || 0) / 100) * 100) / 100 : 0;
 
   function openPayment() {
