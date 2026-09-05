@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getTenantAdminContext } from '@/lib/tenant-guard';
 import { Sidebar } from '@/components/layout/sidebar';
+import { EntitySelectEnhancer } from '@/components/ui/entity-select-enhancer';
 
 export default async function TenantAdminLayout({
   children,
@@ -17,6 +18,7 @@ export default async function TenantAdminLayout({
 
   return (
     <div className="flex min-h-screen bg-slate-50">
+      <EntitySelectEnhancer />
       <Sidebar tenantName={tenant.name} userName={session.name} />
       <div className="flex-1 flex flex-col min-w-0">
         <main className="flex-1">{children}</main>
