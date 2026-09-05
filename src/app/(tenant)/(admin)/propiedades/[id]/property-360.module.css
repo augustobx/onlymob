@@ -33,7 +33,6 @@
 .alertInfo { background:#eff6ff; border-color:#bfdbfe; color:#1e40af; }.alertInfo .alertIcon { background:#dbeafe; }
 .alertSuccess { background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }.alertSuccess .alertIcon { background:#d1fae5; }
 
-operational {} 
 .operationalGrid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr); gap:18px; align-items:start; }
 .contractCard { overflow:hidden; border:1px solid #dbe3ef; border-radius:22px; background:#fff; box-shadow:0 15px 38px rgba(15,23,42,.07); }
 .contractTop { padding:20px 22px; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; background:linear-gradient(120deg,#eef2ff,#f8fafc 72%); border-bottom:1px solid #e7eaf0; }
@@ -55,7 +54,6 @@ operational {}
 .contractDetail span { display:block; font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:.1em; color:#94a3b8; }
 .contractDetail strong { display:block; margin-top:4px; font-size:12px; font-weight:800; color:#334155; }
 
-focusCard { }
 .focusCard { border:1px solid #dbe3ef; border-radius:22px; background:#fff; padding:18px; box-shadow:0 15px 38px rgba(15,23,42,.06); }
 .focusTitle { font-size:15px; font-weight:900; color:#111827; }
 .focusSubtitle { margin-top:3px; font-size:11px; color:#64748b; }
