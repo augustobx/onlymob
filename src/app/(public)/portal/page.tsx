@@ -4,7 +4,6 @@ import { logoutRenterAction } from '@/actions/auth-actions';
 import { getRenterPortalDataAction } from '@/actions/renter-portal';
 import { getRenterPortalCommunicationsAction } from '@/actions/communications';
 import { RenterPortalClient } from './portal-client';
-import { PortalCommunications } from '@/components/portal/portal-communications';
 import { Home, LogOut } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -38,7 +37,6 @@ export default async function RenterDashboardPage() {
 
       <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6">
         <RenterPortalClient data={{ ...(data as any), communications }} />
-        <PortalCommunications messages={communications as any[]} audience="RENTER" />
       </main>
     </div>
   );
