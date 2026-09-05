@@ -43,6 +43,12 @@ export default function proxy(request: NextRequest) {
     }
   }
 
+  if (pathname.startsWith('/propietario') && !pathname.startsWith('/propietario/login')) {
+    if (!request.cookies.get('onlymob_owner_session')) {
+      return NextResponse.redirect(new URL('/propietario/login', request.url));
+    }
+  }
+
   return NextResponse.next();
 }
 
@@ -65,5 +71,6 @@ export const config = {
     '/ajustes/:path*',
     '/superadmin/:path*',
     '/portal/:path*',
+    '/propietario/:path*',
   ],
 };
