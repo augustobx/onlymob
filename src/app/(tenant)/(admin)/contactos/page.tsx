@@ -3,6 +3,7 @@ import { getContactsAction } from '@/actions/contacts';
 import { getPropertiesAction } from '@/actions/properties';
 import { ContactsClient } from './contacts-client';
 import { OwnershipManager } from './ownership-manager';
+import { OwnerPortalAccessManager } from './owner-portal-access-manager';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,8 @@ export default async function ContactsPage() {
     bankAlias: contact.bankAlias,
     bankCbu: contact.bankCbu,
     notes: contact.notes,
+    ownerPortalEnabled: contact.ownerPortalEnabled,
+    hasOwnerPortalPassword: !!contact.ownerPortalPasswordHash,
     roles: contact.roles.map((role) => role.role),
     ownedProperties: contact.ownedProperties.map((owner) => ({
       id: owner.id,
@@ -55,6 +58,7 @@ export default async function ContactsPage() {
         subtitle="Base unificada de propietarios, prospectos, garantes y proveedores"
       />
       <div className="p-8 max-w-7xl mx-auto space-y-8">
+        <OwnerPortalAccessManager contacts={serializedContacts} />
         <OwnershipManager contacts={serializedContacts} properties={propertyOptions} />
         <ContactsClient initialContacts={serializedContacts} />
       </div>
