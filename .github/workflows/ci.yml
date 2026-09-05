@@ -101,7 +101,17 @@ jobs:
           BASELINE=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM _prisma_migrations WHERE migration_name='20260904190000_baseline' AND finished_at IS NOT NULL;")
           test "$BASELINE" = "1"
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: |
+          set -o pipefail
+          npx tsc --noEmit 2>&1 | tee typecheck.log
+      - name: Upload typecheck diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.log
+          if-no-files-found: ignore
+          retention-days: 1
       - name: Production build
         env:
           NODE_ENV: production
