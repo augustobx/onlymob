@@ -1,86 +1,27 @@
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { getAnalyticsAction } from '@/actions/analytics';
 import { formatCurrency } from '@/lib/utils';
+import { resolveTenantContext } from '@/lib/tenant-context';
+import { isTenantFeatureEnabled } from '@/lib/saas';
 
-export const dynamic = 'force-dynamic';
+export const dynamic='force-dynamic';
+const pct=(v:number)=>`${v.toFixed(1)}%`;
+const mins=(v:number|null)=>v==null?'—':v<60?`${Math.round(v)} min`:`${(v/60).toFixed(1)} h`;
 
-function pct(value: number) { return `${value.toFixed(1)}%`; }
-function minutes(value: number | null) { return value == null ? '—' : value < 60 ? `${Math.round(value)} min` : `${(value / 60).toFixed(1)} h`; }
-function hours(value: number | null) { return value == null ? '—' : `${value.toFixed(1)} h`; }
-
-export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
-  const params = await searchParams;
-  const days = [30, 90, 180, 365].includes(Number(params.days)) ? Number(params.days) : 90;
-  const data = await getAnalyticsAction(days);
-  const a = data.administration;
-  const occupancy = a.propertiesTotal ? (a.propertiesOccupied / a.propertiesTotal) * 100 : 0;
-
-  return <div>
-    <Header title="Analytics" subtitle="Indicadores comerciales, administrativos y operativos" />
-    <main className="p-4 sm:p-8 max-w-7xl mx-auto space-y-8">
-      <div className="flex flex-wrap gap-2" aria-label="Período de análisis">
-        {[30,90,180,365].map((value) => <Link key={value} href={`/analytics?days=${value}`} className={`px-3 py-2 rounded-lg text-xs font-semibold border ${days === value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{value} días</Link>)}
-      </div>
-
-      <section aria-labelledby="commercial-title" className="space-y-4">
-        <h2 id="commercial-title" className="text-lg font-bold text-slate-900">Comercial</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Kpi label="Leads" value={data.commercial.leadsTotal} />
-          <Kpi label="Conversión" value={pct(data.commercial.conversionRate)} />
-          <Kpi label="1ª respuesta" value={minutes(data.commercial.avgFirstResponseMinutes)} />
-          <Kpi label="Cierres" value={data.commercial.dealsWon} />
-          <Kpi label="Visitas" value={data.commercial.visitsTotal} />
-          <Kpi label="Reservas" value={data.commercial.reservationsTotal} />
-          <Kpi label="Leads ganados" value={data.commercial.leadsWon} />
-          <Kpi label="Días a cierre" value={data.commercial.avgDaysToClose == null ? '—' : data.commercial.avgDaysToClose.toFixed(1)} />
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <Table title="Conversión por fuente" headers={['Fuente','Leads','Ganados','Conversión']} rows={data.leadsBySource.map((x) => [x.source,x.leads,x.won,pct(x.conversionRate)])} />
-          <Table title="Performance por agente" headers={['Agente','Leads','Ganados','Cierres','Respuesta']} rows={data.agents.map((x) => [x.name,x.leads,x.leadsWon,x.dealsWon,minutes(x.avgResponseMinutes)])} />
-        </div>
-      </section>
-
-      <section aria-labelledby="admin-title" className="space-y-4">
-        <h2 id="admin-title" className="text-lg font-bold text-slate-900">Administración</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Kpi label="Ocupación" value={pct(occupancy)} />
-          <Kpi label="Alquiler esperado/mes" value={formatCurrency(a.expectedMonthlyRent)} />
-          <Kpi label="Cobrado este mes" value={formatCurrency(a.collectedMonth)} />
-          <Kpi label="Morosidad" value={formatCurrency(a.outstandingDebt)} />
-          <Kpi label="Contratos por vencer" value={a.expiringLeases} />
-          <Kpi label="Ajustes próximos" value={a.upcomingAdjustments} />
-          <Kpi label="Liquidaciones pendientes" value={a.pendingSettlements} />
-          <Kpi label="Monto a liquidar" value={formatCurrency(a.pendingSettlementAmount)} />
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <Table title="Aging de deuda" headers={['Antigüedad','Casos','Saldo']} rows={data.debtAging.map((x) => [x.bucket,x.count,formatCurrency(x.amount)])} />
-          <Table title="Flujo por propiedad" headers={['Propiedad','Cobrado','Gastos','Mantenimiento','Flujo neto']} rows={data.propertyEconomics.map((x) => [`${x.code} · ${x.address}`,formatCurrency(x.collected),formatCurrency(x.expenses),formatCurrency(x.maintenanceCost),formatCurrency(x.netFlow)])} />
-        </div>
-      </section>
-
-      <section aria-labelledby="ops-title" className="space-y-4">
-        <h2 id="ops-title" className="text-lg font-bold text-slate-900">Operación</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <Kpi label="Mantenimiento abierto" value={data.maintenance.openCount} />
-          <Kpi label="Urgentes" value={data.maintenance.urgentCount} />
-          <Kpi label="Resolución media" value={hours(data.maintenance.avgResolutionHours)} />
-          <Kpi label={`Costo ${days}d`} value={formatCurrency(data.maintenance.totalCost)} />
-          <Kpi label="Tareas vencidas" value={data.maintenance.overdueTasks} />
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <Table title="Proveedores" headers={['Proveedor','Trabajos','Resueltos','Costo','Promedio']} rows={data.providers.map((x) => [x.providerName,x.requests,x.resolved,formatCurrency(x.totalCost),formatCurrency(x.avgCost)])} />
-          <Table title="Equipo" headers={['Usuario','Tareas abiertas','Tareas cerradas','Mant. abierto','Mant. resuelto']} rows={data.team.map((x) => [x.name,x.openTasks,x.completedTasks,x.openMaintenance,x.resolvedMaintenance])} />
-        </div>
-      </section>
-    </main>
-  </div>;
+export default async function AnalyticsPage({searchParams}:{searchParams:Promise<{days?:string}>}){
+  const tenant=await resolveTenantContext(); if(!(await isTenantFeatureEnabled(tenant.id,'analytics',true))) notFound();
+  const params=await searchParams; const days=[30,90,180,365].includes(Number(params.days))?Number(params.days):90; const data=await getAnalyticsAction(days); const a=data.administration;
+  return <div><Header title="Analytics" subtitle="Indicadores comerciales, administrativos y operativos"/><main className="p-4 sm:p-8 max-w-7xl mx-auto space-y-8">
+    <nav className="flex flex-wrap gap-2" aria-label="Período de análisis">{[30,90,180,365].map(v=><Link key={v} href={`/analytics?days=${v}`} className={`px-3 py-2 rounded-lg text-xs font-semibold border ${days===v?'bg-indigo-600 text-white border-indigo-600':'bg-white text-slate-600 border-slate-200'}`}>{v} días</Link>)}</nav>
+    <Section title="Comercial"><Grid><K label="Leads" v={data.commercial.leadsTotal}/><K label="Conversión" v={pct(data.commercial.conversionRate)}/><K label="1ª respuesta" v={mins(data.commercial.avgFirstResponseMinutes)}/><K label="Cierres" v={data.commercial.dealsWon}/><K label="Visitas" v={data.commercial.visitsTotal}/><K label="Reservas" v={data.commercial.reservationsTotal}/><K label="Ganados" v={data.commercial.leadsWon}/><K label="Días a cierre" v={data.commercial.avgDaysToClose?.toFixed(1)??'—'}/></Grid><Tables><T title="Conversión por fuente" h={['Fuente','Leads','Ganados','Conversión']} r={data.leadsBySource.map(x=>[x.source,x.leads,x.won,pct(x.conversionRate)])}/><T title="Performance por agente" h={['Agente','Leads','Ganados','Cierres','Respuesta']} r={data.agents.map(x=>[x.name,x.leads,x.leadsWon,x.dealsWon,mins(x.avgResponseMinutes)])}/></Tables></Section>
+    <Section title="Administración"><Grid><K label="Ocupación" v={pct(a.occupancyRate)}/><K label="Esperado/mes" v={formatCurrency(a.expectedMonthlyRent)}/><K label="Cobrado mes" v={formatCurrency(a.collectedMonth)}/><K label="Morosidad" v={formatCurrency(a.outstandingDebt)}/><K label="Contratos por vencer" v={a.expiringLeases}/><K label="Ajustes próximos" v={a.upcomingAdjustments}/><K label="Liquidaciones" v={a.pendingSettlements}/><K label="A liquidar" v={formatCurrency(a.pendingSettlementAmount)}/></Grid><Tables><T title="Aging de deuda" h={['Antigüedad','Casos','Saldo']} r={data.aging.map(x=>[x.bucket,x.count,formatCurrency(x.amount)])}/><T title="Flujo por propiedad" h={['Propiedad','Cobrado','Gastos','Mant.','Neto']} r={data.propertyEconomics.map(x=>[`${x.code} · ${x.address}`,formatCurrency(x.collected),formatCurrency(x.expenses),formatCurrency(x.maintenanceCost),formatCurrency(x.netFlow)])}/></Tables></Section>
+    <Section title="Operación"><Grid><K label="Mant. abierto" v={data.maintenance.openCount}/><K label="Urgentes" v={data.maintenance.urgentCount}/><K label="Resolución media" v={data.maintenance.avgResolutionHours==null?'—':`${data.maintenance.avgResolutionHours.toFixed(1)} h`}/><K label={`Costo ${days}d`} v={formatCurrency(data.maintenance.totalCost)}/><K label="Tareas vencidas" v={data.maintenance.overdueTasks}/></Grid><Tables><T title="Proveedores" h={['Proveedor','Trabajos','Resueltos','Costo','Promedio']} r={data.providers.map(x=>[x.providerName,x.requests,x.resolved,formatCurrency(x.totalCost),formatCurrency(x.avgCost)])}/><T title="Equipo" h={['Usuario','Tareas abiertas','Cerradas','Mant. abierto','Resuelto']} r={data.team.map(x=>[x.name,x.openTasks,x.completedTasks,x.openMaintenance,x.resolvedMaintenance])}/></Tables></Section>
+  </main></div>;
 }
-
-function Kpi({ label, value }: { label: string; value: string | number }) {
-  return <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs"><p className="text-[11px] uppercase tracking-wide font-bold text-slate-500">{label}</p><p className="mt-2 text-xl font-extrabold text-slate-900 break-words">{value}</p></div>;
-}
-
-function Table({ title, headers, rows }: { title: string; headers: string[]; rows: Array<Array<string | number>> }) {
-  return <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs"><h3 className="font-bold text-sm text-slate-900 p-4 border-b border-slate-100">{title}</h3><div className="overflow-x-auto"><table className="min-w-full text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{headers.map((h) => <th key={h} scope="col" className="text-left px-3 py-2 font-semibold whitespace-nowrap">{h}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row,i) => <tr key={i} className="border-t border-slate-100">{row.map((cell,j) => <td key={j} className="px-3 py-2.5 text-slate-700 whitespace-nowrap">{cell}</td>)}</tr>) : <tr><td colSpan={headers.length} className="px-3 py-8 text-center text-slate-400">Sin datos para el período.</td></tr>}</tbody></table></div></div>;
-}
+function Section({title,children}:{title:string;children:React.ReactNode}){return <section className="space-y-4"><h2 className="text-lg font-bold text-slate-900">{title}</h2>{children}</section>}
+function Grid({children}:{children:React.ReactNode}){return <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{children}</div>}
+function Tables({children}:{children:React.ReactNode}){return <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">{children}</div>}
+function K({label,v}:{label:string;v:string|number}){return <div className="bg-white border rounded-xl p-4"><p className="text-[11px] uppercase font-bold text-slate-500">{label}</p><p className="mt-2 text-xl font-extrabold text-slate-900 break-words">{v}</p></div>}
+function T({title,h,r}:{title:string;h:string[];r:Array<Array<string|number>>}){return <div className="bg-white border rounded-xl overflow-hidden"><h3 className="p-4 border-b font-bold text-sm">{title}</h3><div className="overflow-x-auto"><table className="min-w-full text-xs"><thead className="bg-slate-50"><tr>{h.map(x=><th key={x} scope="col" className="text-left px-3 py-2 whitespace-nowrap">{x}</th>)}</tr></thead><tbody>{r.length?r.map((row,i)=><tr key={i} className="border-t">{row.map((c,j)=><td key={j} className="px-3 py-2 whitespace-nowrap">{c}</td>)}</tr>):<tr><td colSpan={h.length} className="p-6 text-center text-slate-400">Sin datos.</td></tr>}</tbody></table></div></div>}
