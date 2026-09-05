@@ -23,10 +23,7 @@ const NEGATIVE_CACHE_TTL_MS = 2_000;
 const cache = new Map<string, { expiresAt: number; value: Promise<TenantContext | null> }>();
 
 export class TenantResolutionError extends Error {
-  constructor(message = 'TENANT_NOT_FOUND') {
-    super(message);
-    this.name = 'TenantResolutionError';
-  }
+  constructor(message = 'TENANT_NOT_FOUND') { super(message); this.name = 'TenantResolutionError'; }
 }
 
 export function normalizeHostname(value: string | null | undefined) {
@@ -38,70 +35,46 @@ export function normalizeHostname(value: string | null | undefined) {
 
 export async function getRequestHostname() {
   const headerStore = await headers();
-  // Igual que OnlyGym: Host es la fuente autoritativa. Nginx Proxy Manager conserva
-  // el Host solicitado por el cliente; no dependemos de X-Forwarded-Host para tenancy.
   return normalizeHostname(headerStore.get('host'));
 }
 
-async function findTenantRecord(hostname: string) {
-  // 1. Coincidencia exacta de dominio registrado.
-  const domain = await platformPrisma.tenantDomain.findUnique({
-    where: { hostname },
-    include: { tenant: true },
-  });
+async function subscriptionAllowsAccess(tenantId: string) {
+  const subscription = await platformPrisma.tenantSubscription.findFirst({ where: { tenantId }, orderBy: { createdAt: 'desc' }, select: { status: true, trialEndsAt: true } });
+  if (!subscription) return true;
+  if (subscription.status === 'SUSPENDED' || subscription.status === 'CANCELED') return false;
+  if (subscription.status === 'TRIAL' && subscription.trialEndsAt && subscription.trialEndsAt < new Date()) return false;
+  return true;
+}
 
+async function findTenantRecord(hostname: string) {
+  const domain = await platformPrisma.tenantDomain.findUnique({ where: { hostname }, include: { tenant: true } });
   let tenant = domain?.verifiedAt ? domain.tenant : null;
 
-  // 2. Dominio canónico SaaS: <slug>.nanoapps.ar
   if (!tenant && hostname.endsWith(`.${BASE_DOMAIN}`)) {
     const slug = hostname.slice(0, -(BASE_DOMAIN.length + 1));
-    if (slug && !slug.includes('.') && slug !== PLATFORM_HOST.split('.')[0]) {
-      tenant = await platformPrisma.tenant.findUnique({ where: { slug } });
-    }
+    if (slug && !slug.includes('.') && slug !== PLATFORM_HOST.split('.')[0]) tenant = await platformPrisma.tenant.findUnique({ where: { slug } });
   }
 
-  // 3. Fallback sólo para desarrollo/plataforma directa.
   if (!tenant && (hostname.includes('localhost') || hostname.includes('127.0.0.1') || hostname === PLATFORM_HOST)) {
     try {
       const cookieStore = await cookies();
       const cookieSlug = cookieStore.get('onlymob_tenant_slug')?.value;
-      if (cookieSlug) {
-        tenant = await platformPrisma.tenant.findUnique({ where: { slug: cookieSlug } });
-      }
-    } catch {
-      // Cookies not accessible during static generation
-    }
-    if (!tenant) {
-      tenant = await platformPrisma.tenant.findFirst({
-        where: { status: 'ACTIVE' },
-        orderBy: { createdAt: 'asc' },
-      });
-    }
+      if (cookieSlug) tenant = await platformPrisma.tenant.findUnique({ where: { slug: cookieSlug } });
+    } catch {}
+    if (!tenant) tenant = await platformPrisma.tenant.findFirst({ where: { status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
   }
 
-  if (!tenant || tenant.status === 'ARCHIVED') return null;
+  if (!tenant || tenant.status !== 'ACTIVE' || !(await subscriptionAllowsAccess(tenant.id))) return null;
   return tenant;
 }
 
 function toContext(tenant: any, hostname: string): TenantContext {
-  return {
-    id: tenant.id,
-    slug: tenant.slug,
-    name: tenant.name,
-    hostname,
-    timezone: tenant.timezone || 'America/Argentina/Buenos_Aires',
-    logoUrl: tenant.logoUrl,
-    receiptHeader: tenant.receiptHeader,
-    address: tenant.address ?? null,
-    phone: tenant.phone ?? null,
-    cuit: tenant.cuit ?? null,
-  };
+  return { id: tenant.id, slug: tenant.slug, name: tenant.name, hostname, timezone: tenant.timezone || 'America/Argentina/Buenos_Aires', logoUrl: tenant.logoUrl, receiptHeader: tenant.receiptHeader, address: tenant.address ?? null, phone: tenant.phone ?? null, cuit: tenant.cuit ?? null };
 }
 
 export async function findTenant(hostname: string): Promise<TenantContext | null> {
   const tenant = await findTenantRecord(hostname);
-  if (!tenant || tenant.status !== 'ACTIVE') return null;
-  return toContext(tenant, hostname);
+  return tenant ? toContext(tenant, hostname) : null;
 }
 
 export async function resolveTenantContext(): Promise<TenantContext> {
@@ -109,7 +82,7 @@ export async function resolveTenantContext(): Promise<TenantContext> {
   if (trustedTenantId) {
     const tenant = await platformPrisma.tenant.findUnique({ where: { id: trustedTenantId } });
     if (!tenant) throw new TenantResolutionError('TENANT_NOT_FOUND');
-    if (tenant.status !== 'ACTIVE') throw new TenantResolutionError('TENANT_SUSPENDED');
+    if (tenant.status !== 'ACTIVE' || !(await subscriptionAllowsAccess(tenant.id))) throw new TenantResolutionError('TENANT_SUSPENDED');
     return toContext(tenant, `${tenant.slug}.${BASE_DOMAIN}`);
   }
 
@@ -124,22 +97,14 @@ export async function resolveTenantContext(): Promise<TenantContext> {
   const value = findTenant(hostname);
   const entry = { value, expiresAt: Date.now() + NEGATIVE_CACHE_TTL_MS };
   cache.set(hostname, entry);
-
   const tenant = await value;
   if (!tenant) {
     console.error(`[OnlyMob tenant] TENANT_NOT_FOUND host=${hostname || '<empty>'} base=${BASE_DOMAIN} platform=${PLATFORM_HOST}`);
     throw new TenantResolutionError('TENANT_NOT_FOUND');
   }
-
   entry.expiresAt = Date.now() + POSITIVE_CACHE_TTL_MS;
   return tenant;
 }
 
-export function clearTenantResolutionCache() {
-  cache.clear();
-}
-
-export async function isPlatformRequest() {
-  const hostname = await getRequestHostname();
-  return hostname === PLATFORM_HOST;
-}
+export function clearTenantResolutionCache() { cache.clear(); }
+export async function isPlatformRequest() { return (await getRequestHostname()) === PLATFORM_HOST; }

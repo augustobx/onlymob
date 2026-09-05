@@ -2,44 +2,17 @@ import 'server-only';
 
 import { platformPrisma } from '@/lib/prisma-core';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { applyTenantScope } from '@/lib/tenant-scope';
+import { assertTenantPlanLimit, type PlanResource } from '@/lib/saas';
 
 export { platformPrisma } from '@/lib/prisma-core';
 
-const READ_OPERATIONS = new Set([
-  'findMany',
-  'findFirst',
-  'findFirstOrThrow',
-  'findUnique',
-  'findUniqueOrThrow',
-  'count',
-  'aggregate',
-  'groupBy',
-]);
-
-const WRITE_WHERE_OPERATIONS = new Set([
-  'update',
-  'updateMany',
-  'delete',
-  'deleteMany',
-]);
-
-function tenantOperation(tenantId: string) {
+function tenantOperation(tenantId: string, limitedResource?: PlanResource) {
   return async ({ operation, args, query }: any) => {
-    args ||= {};
-
-    if (READ_OPERATIONS.has(operation) || WRITE_WHERE_OPERATIONS.has(operation)) {
-      args.where = { ...args.where, tenantId };
-    } else if (operation === 'create') {
-      args.data = { ...args.data, tenantId };
-    } else if (operation === 'createMany' || operation === 'createManyAndReturn') {
-      const rows = Array.isArray(args.data) ? args.data : [args.data];
-      args.data = rows.map((row: any) => ({ ...row, tenantId }));
-    } else if (operation === 'upsert') {
-      args.where = { ...args.where, tenantId };
-      args.create = { ...args.create, tenantId };
+    if (limitedResource && ['create','createMany','createManyAndReturn','upsert'].includes(operation)) {
+      await assertTenantPlanLimit(tenantId, limitedResource);
     }
-
-    return query(args);
+    return query(applyTenantScope(tenantId, operation, args || {}));
   };
 }
 
@@ -49,10 +22,10 @@ export async function getTenantPrisma() {
 
   return platformPrisma.$extends({
     query: {
-      user: { $allOperations: scoped },
+      user: { $allOperations: tenantOperation(tenant.id, 'users') },
       propertyRenter: { $allOperations: scoped },
       contact: { $allOperations: scoped },
-      property: { $allOperations: scoped },
+      property: { $allOperations: tenantOperation(tenant.id, 'properties') },
       propertyOwner: { $allOperations: scoped },
       garage: { $allOperations: scoped },
       propertyLease: { $allOperations: scoped },
@@ -70,7 +43,7 @@ export async function getTenantPrisma() {
       leadPropertyInterest: { $allOperations: scoped },
       task: { $allOperations: scoped },
       calendarEvent: { $allOperations: scoped },
-      publication: { $allOperations: scoped },
+      publication: { $allOperations: tenantOperation(tenant.id, 'publications') },
       reservation: { $allOperations: scoped },
       deal: { $allOperations: scoped },
       propertyExpense: { $allOperations: scoped },
