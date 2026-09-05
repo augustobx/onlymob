@@ -8,6 +8,7 @@ import { resolveTenantContext } from '@/lib/tenant-context';
 
 export const ADMIN_COOKIE_NAME = 'onlymob_admin_session';
 export const RENTER_COOKIE_NAME = 'onlymob_renter_session';
+export const OWNER_COOKIE_NAME = 'onlymob_owner_session';
 export const SUPERADMIN_COOKIE_NAME = 'onlymob_superadmin_session';
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -188,6 +189,79 @@ export async function getRenterSession(expectedTenantId?: string): Promise<Rente
 export async function clearRenterSession() {
   const cookieStore = await cookies();
   cookieStore.delete(RENTER_COOKIE_NAME);
+}
+
+export type OwnerSession = {
+  ownerContactId: string;
+  tenantId: string;
+  name: string;
+  identifier: string;
+  exp: number;
+};
+
+export async function createOwnerSession(owner: {
+  id: string;
+  tenantId: string;
+  firstName: string;
+  lastName: string;
+  companyName?: string | null;
+  documentNumber?: string | null;
+  cuit?: string | null;
+  email?: string | null;
+}) {
+  const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS * 4;
+  const identifier = owner.documentNumber || owner.cuit || owner.email || owner.id;
+  const name = owner.companyName || `${owner.firstName} ${owner.lastName}`.trim();
+  const token = signToken({ ownerContactId: owner.id, tenantId: owner.tenantId, name, identifier, exp });
+
+  const cookieStore = await cookies();
+  cookieStore.set(OWNER_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: SESSION_TTL_SECONDS * 4,
+    path: '/',
+  });
+}
+
+export async function getOwnerSession(expectedTenantId?: string): Promise<OwnerSession | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(OWNER_COOKIE_NAME)?.value;
+  if (!token) return null;
+
+  const session = verifyToken<OwnerSession>(token);
+  if (!session) return null;
+
+  let tenantId = expectedTenantId;
+  if (!tenantId) {
+    try {
+      tenantId = (await resolveTenantContext()).id;
+    } catch {
+      return null;
+    }
+  }
+  if (session.tenantId !== tenantId) return null;
+
+  const owner = await platformPrisma.contact.findFirst({
+    where: {
+      id: session.ownerContactId,
+      tenantId,
+      isActive: true,
+      archivedAt: null,
+      ownerPortalEnabled: true,
+      roles: { some: { role: 'OWNER' } },
+      ownedProperties: { some: { tenantId } },
+    },
+    include: { tenant: true },
+  });
+
+  if (!owner || owner.tenant.status !== 'ACTIVE') return null;
+  return session;
+}
+
+export async function clearOwnerSession() {
+  const cookieStore = await cookies();
+  cookieStore.delete(OWNER_COOKIE_NAME);
 }
 
 export type SuperAdminSession = {

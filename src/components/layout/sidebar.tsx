@@ -17,6 +17,7 @@ import {
   CalendarDays,
   Handshake,
   Landmark,
+  Wrench,
 } from 'lucide-react';
 import { logoutAdminAction } from '@/actions/auth-actions';
 
@@ -35,6 +36,7 @@ const navItems = [
   { name: 'Inquilinos', href: '/inquilinos', icon: Users },
   { name: 'Cocheras', href: '/cocheras', icon: Warehouse },
   { name: 'Contratos', href: '/contratos', icon: FileText },
+  { name: 'Mantenimiento', href: '/mantenimiento', icon: Wrench },
   { name: 'Cobranzas & Pagos', href: '/cobranzas', icon: CreditCard },
   { name: 'Administración', href: '/administracion', icon: Landmark },
   { name: 'Configuraciones', href: '/ajustes', icon: Settings },
