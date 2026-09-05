@@ -1,0 +1,96 @@
+.page { display:flex; flex-direction:column; gap:18px; }
+.back { display:inline-flex; align-items:center; gap:8px; width:max-content; color:#64748b; font-size:13px; font-weight:700; }
+.back:hover { color:#111827; }
+
+.hero { position:relative; overflow:hidden; border:1px solid #dfe5ef; border-radius:24px; background:linear-gradient(125deg,#0f172a 0%,#172554 52%,#312e81 100%); color:#fff; box-shadow:0 24px 65px rgba(15,23,42,.16); }
+.hero::after { content:""; position:absolute; width:430px; height:430px; right:-150px; top:-220px; border-radius:999px; background:rgba(129,140,248,.18); filter:blur(4px); }
+.heroGrid { position:relative; z-index:1; display:grid; grid-template-columns:minmax(0,1fr) 300px; min-height:250px; }
+.heroMain { padding:30px 32px 26px; display:flex; flex-direction:column; justify-content:space-between; gap:24px; }
+.heroEyebrow { display:flex; align-items:center; gap:8px; font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.16em; color:#a5b4fc; }
+.heroTitle { margin:8px 0 0; font-size:31px; line-height:1.08; font-weight:900; letter-spacing:-.035em; color:#fff; }
+.heroLocation { margin-top:8px; display:flex; align-items:center; gap:7px; font-size:13px; color:#cbd5e1; }
+.heroBadges { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.heroBadge { display:inline-flex; align-items:center; gap:6px; border:1px solid rgba(255,255,255,.14); border-radius:999px; background:rgba(255,255,255,.08); padding:6px 10px; font-size:11px; font-weight:800; color:#e2e8f0; backdrop-filter:blur(8px); }
+.heroBadgeStrong { background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }
+.heroStats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.heroStat { border:1px solid rgba(255,255,255,.1); border-radius:16px; background:rgba(255,255,255,.07); padding:13px 14px; backdrop-filter:blur(10px); }
+.heroStatLabel { display:block; font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:.12em; color:#94a3b8; }
+.heroStatValue { display:block; margin-top:6px; font-size:16px; font-weight:900; color:#fff; overflow-wrap:anywhere; }
+.heroMedia { min-height:250px; border-left:1px solid rgba(255,255,255,.08); background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.02)); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.heroMedia img { width:100%; height:100%; object-fit:cover; }
+.heroPlaceholder { display:flex; flex-direction:column; align-items:center; gap:10px; color:#a5b4fc; font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.12em; }
+
+.actionsBar { position:sticky; top:92px; z-index:17; padding:12px; border:1px solid #e2e8f0; border-radius:18px; background:rgba(255,255,255,.94); box-shadow:0 12px 35px rgba(15,23,42,.08); backdrop-filter:blur(16px); }
+
+.alerts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.alert { display:flex; gap:12px; min-height:96px; padding:15px; border-radius:18px; border:1px solid transparent; }
+.alertIcon { width:38px; height:38px; flex:none; display:flex; align-items:center; justify-content:center; border-radius:12px; }
+.alertLabel { display:block; font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:.11em; }
+.alertTitle { margin-top:3px; font-size:14px; line-height:1.25; font-weight:900; }
+.alertDetail { margin-top:5px; font-size:11px; line-height:1.35; opacity:.78; }
+.alertDanger { background:#fff1f2; border-color:#fecdd3; color:#9f1239; }.alertDanger .alertIcon { background:#ffe4e6; }
+.alertWarning { background:#fffbeb; border-color:#fde68a; color:#92400e; }.alertWarning .alertIcon { background:#fef3c7; }
+.alertInfo { background:#eff6ff; border-color:#bfdbfe; color:#1e40af; }.alertInfo .alertIcon { background:#dbeafe; }
+.alertSuccess { background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }.alertSuccess .alertIcon { background:#d1fae5; }
+
+.operationalGrid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr); gap:18px; align-items:start; }
+.contractCard { overflow:hidden; border:1px solid #dbe3ef; border-radius:22px; background:#fff; box-shadow:0 15px 38px rgba(15,23,42,.07); }
+.contractTop { padding:20px 22px; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; background:linear-gradient(120deg,#eef2ff,#f8fafc 72%); border-bottom:1px solid #e7eaf0; }
+.contractKicker { font-size:10px; font-weight:900; text-transform:uppercase; letter-spacing:.12em; color:#4f46e5; }
+.contractTitle { margin-top:5px; font-size:20px; font-weight:900; letter-spacing:-.02em; color:#111827; }
+.contractSubtitle { margin-top:5px; color:#64748b; font-size:12px; }
+.contractBody { padding:20px 22px; }
+.contractNumbers { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+.numberCard { border-radius:16px; padding:14px; border:1px solid #e5e7eb; background:#fff; }
+.numberCard span { display:block; font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:.1em; color:#94a3b8; }
+.numberCard strong { display:block; margin-top:5px; font-size:18px; font-weight:900; color:#0f172a; }
+.numberCard small { display:block; margin-top:4px; font-size:10px; color:#64748b; }
+.numberIndigo { background:#eef2ff; border-color:#c7d2fe; }.numberIndigo span,.numberIndigo strong { color:#3730a3; }
+.numberAmber { background:#fffbeb; border-color:#fde68a; }.numberAmber span,.numberAmber strong { color:#92400e; }
+.numberRose { background:#fff1f2; border-color:#fecdd3; }.numberRose span,.numberRose strong { color:#9f1239; }
+.contractDetails { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; }
+.contractDetail { padding:12px 14px; border-bottom:1px solid #eef2f7; background:#fff; }
+.contractDetail:nth-child(odd) { border-right:1px solid #eef2f7; }
+.contractDetail span { display:block; font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:.1em; color:#94a3b8; }
+.contractDetail strong { display:block; margin-top:4px; font-size:12px; font-weight:800; color:#334155; }
+
+.focusCard { border:1px solid #dbe3ef; border-radius:22px; background:#fff; padding:18px; box-shadow:0 15px 38px rgba(15,23,42,.06); }
+.focusTitle { font-size:15px; font-weight:900; color:#111827; }
+.focusSubtitle { margin-top:3px; font-size:11px; color:#64748b; }
+.focusList { display:flex; flex-direction:column; gap:10px; margin-top:15px; }
+.focusItem { display:grid; grid-template-columns:38px 1fr auto; align-items:center; gap:10px; padding:11px; border-radius:14px; background:#f8fafc; border:1px solid #eef2f7; }
+.focusItemIcon { width:38px; height:38px; display:flex; align-items:center; justify-content:center; border-radius:11px; background:#eef2ff; color:#4f46e5; }
+.focusItem strong { display:block; font-size:12px; color:#1e293b; }
+.focusItem span { display:block; margin-top:2px; font-size:10px; color:#64748b; }
+.focusValue { font-size:12px; font-weight:900; color:#0f172a; text-align:right; }
+
+.sectionNav { display:flex; gap:6px; overflow-x:auto; padding:6px; border:1px solid #e2e8f0; border-radius:15px; background:#fff; box-shadow:0 3px 12px rgba(15,23,42,.04); }
+.sectionNav a { white-space:nowrap; padding:8px 11px; border-radius:10px; font-size:11px; font-weight:800; color:#64748b; }
+.sectionNav a:hover { background:#eef2ff; color:#4338ca; }
+
+.sectionGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.coloredSection { border-radius:20px; border:1px solid #e2e8f0; background:#fff; overflow:hidden; box-shadow:0 10px 30px rgba(15,23,42,.045); }
+.coloredHeader { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 18px; border-bottom:1px solid #eef2f7; }
+.coloredHeader h2 { margin:0; font-size:15px; font-weight:900; color:#111827; }.coloredHeader p { margin:3px 0 0; font-size:10px; color:#64748b; }
+.coloredBody { padding:16px 18px; }
+.headerBlue { background:#eff6ff; }.headerGreen { background:#ecfdf5; }.headerAmber { background:#fffbeb; }.headerViolet { background:#f5f3ff; }.headerRose { background:#fff1f2; }.headerSlate { background:#f8fafc; }
+
+@media (max-width: 1280px) {
+  .heroGrid { grid-template-columns:1fr 240px; }
+  .heroStats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .alerts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .operationalGrid { grid-template-columns:1fr; }
+}
+@media (max-width: 1023px) {
+  .actionsBar { position:relative; top:auto; }
+  .heroGrid { grid-template-columns:1fr; }
+  .heroMedia { min-height:180px; border-left:0; border-top:1px solid rgba(255,255,255,.08); }
+  .sectionGrid { grid-template-columns:1fr; }
+}
+@media (max-width: 640px) {
+  .heroMain { padding:22px 18px; }
+  .heroTitle { font-size:25px; }
+  .heroStats,.alerts,.contractNumbers { grid-template-columns:1fr; }
+  .contractDetails { grid-template-columns:1fr; }
+  .contractDetail:nth-child(odd) { border-right:0; }
+}
