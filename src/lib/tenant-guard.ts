@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { getAdminSession } from '@/lib/auth';
 import { platformPrisma } from '@/lib/prisma-core';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { publishDomainActivity } from '@/lib/domain-events';
 
 export const getTenantAdminContext = cache(async () => {
   const tenant = await resolveTenantContext();
@@ -48,6 +49,14 @@ export async function auditTenantAction(input: {
       userAgent: headerStore.get('user-agent')?.slice(0, 500) || null,
     },
   });
+
+  // ActivityEvent es una proyección secundaria: nunca debe hacer fallar la
+  // operación principal si un endpoint externo o una integración está caída.
+  try {
+    await publishDomainActivity(input);
+  } catch (error) {
+    console.error('[OnlyMob activity-event]', error);
+  }
 }
 
 export async function assertPropertyBelongsToTenant(tenantId: string, propertyId: string) {
