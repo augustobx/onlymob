@@ -11,8 +11,17 @@ function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
 }
 
+function startOfLocalDay(date: Date) {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
 function dateKey(date = new Date()) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function money(value: unknown) {
@@ -22,6 +31,7 @@ function money(value: unknown) {
 
 export async function runAutomationSweep(input: { tenantId?: string | null } = {}) {
   const now = new Date();
+  const today = startOfLocalDay(now);
   const recentSince = addDays(now, -1);
   const tenants = await platformPrisma.tenant.findMany({
     where: {
@@ -96,7 +106,7 @@ export async function runAutomationSweep(input: { tenantId?: string | null } = {
         where: {
           tenantId: tenant.id,
           status: { in: ['CURRENT', 'EXPIRING'] },
-          endDate: { gte: now, lte: addDays(now, 30) },
+          endDate: { gte: today, lte: addDays(today, 30) },
         },
         include: {
           property: { select: { code: true, address: true } },
@@ -107,7 +117,7 @@ export async function runAutomationSweep(input: { tenantId?: string | null } = {
         where: {
           tenantId: tenant.id,
           status: { in: ['CURRENT', 'EXPIRING'] },
-          nextAdjustmentDate: { gte: now, lte: addDays(now, 15) },
+          nextAdjustmentDate: { gte: today, lte: addDays(today, 15) },
         },
         include: {
           property: { select: { code: true, address: true } },
@@ -122,7 +132,7 @@ export async function runAutomationSweep(input: { tenantId?: string | null } = {
         where: {
           tenantId: tenant.id,
           status: { in: ['PENDING', 'PARTIAL'] },
-          dueDate: { gte: now, lte: addDays(now, 5) },
+          dueDate: { gte: today, lte: addDays(today, 5) },
         },
         include: { renter: { select: { firstName: true, lastName: true } } },
       }),
@@ -130,7 +140,7 @@ export async function runAutomationSweep(input: { tenantId?: string | null } = {
         where: {
           tenantId: tenant.id,
           status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-          dueDate: { lt: now },
+          dueDate: { lt: today },
         },
         include: { renter: { select: { firstName: true, lastName: true } } },
       }),
