@@ -255,6 +255,55 @@ enum SettlementStatus {
   CANCELED
 }
 
+enum MaintenancePriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum MaintenanceStatus {
+  OPEN
+  TRIAGED
+  QUOTED
+  APPROVED
+  IN_PROGRESS
+  WAITING_PARTS
+  RESOLVED
+  CANCELED
+}
+
+enum MaintenanceCostBearer {
+  OWNER
+  RENTER
+  TENANT
+  INSURANCE
+  UNASSIGNED
+}
+
+enum InspectionType {
+  ENTRY
+  EXIT
+  PERIODIC
+  OTHER
+}
+
+enum InspectionStatus {
+  DRAFT
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum InspectionSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
 // ==========================================
 // PLANO PLATAFORMA SAAS (SUPERADMIN)
 // ==========================================
@@ -304,6 +353,11 @@ model Tenant {
   propertyExpenses      PropertyExpense[]
   ownerSettlements      OwnerSettlement[]
   recurringCharges      RecurringCharge[]
+  providerProfiles      ProviderProfile[]
+  maintenanceRequests   MaintenanceRequest[]
+  maintenanceEvents     MaintenanceEvent[]
+  inspections           Inspection[]
+  inspectionFindings    InspectionFinding[]
 }
 
 model TenantDomain {
@@ -408,16 +462,19 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  tenant             Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  roleProfile        RoleProfile? @relation(fields: [roleProfileId], references: [id], onDelete: SetNull)
-  assignedProperties Property[]   @relation("PropertyAgent")
-  auditLogs          AuditLog[]
-  assignedLeads      Lead[]       @relation("LeadAgent")
-  leadInteractions   LeadInteraction[] @relation("InteractionUser")
-  assignedTasks      Task[]       @relation("TaskAssignee")
-  calendarEvents     CalendarEvent[] @relation("EventAgent")
-  reservations       Reservation[] @relation("ReservationAgent")
-  deals              Deal[]       @relation("DealAgent")
+  tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roleProfile            RoleProfile?         @relation(fields: [roleProfileId], references: [id], onDelete: SetNull)
+  assignedProperties     Property[]           @relation("PropertyAgent")
+  auditLogs              AuditLog[]
+  assignedLeads          Lead[]               @relation("LeadAgent")
+  leadInteractions       LeadInteraction[]    @relation("InteractionUser")
+  assignedTasks          Task[]               @relation("TaskAssignee")
+  calendarEvents         CalendarEvent[]      @relation("EventAgent")
+  reservations           Reservation[]        @relation("ReservationAgent")
+  deals                  Deal[]               @relation("DealAgent")
+  maintenanceAssignments MaintenanceRequest[] @relation("MaintenanceAssignee")
+  maintenanceEvents      MaintenanceEvent[]   @relation("MaintenanceEventActor")
+  inspections            Inspection[]         @relation("InspectionInspector")
 
   @@unique([tenantId, email])
   @@index([tenantId, isActive])
@@ -479,19 +536,21 @@ model Contact {
   updatedAt       DateTime @updatedAt
   archivedAt      DateTime?
 
-  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  roles                ContactRole[]
-  ownedProperties      PropertyOwner[]
-  leads                Lead[]
-  demands              Demand[]
-  tasks                Task[]
-  calendarEvents       CalendarEvent[]
-  reservations         Reservation[]
-  deals                Deal[]
-  providedExpenses     PropertyExpense[]  @relation("ExpenseProvider")
-  chargedOwnerExpenses PropertyExpense[]  @relation("ExpenseOwner")
-  ownerSettlements     OwnerSettlement[]  @relation("OwnerSettlementContact")
-  guaranteedLeases     PropertyLease[]    @relation("LeaseGuarantor")
+  tenant                    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roles                     ContactRole[]
+  ownedProperties           PropertyOwner[]
+  leads                     Lead[]
+  demands                   Demand[]
+  tasks                     Task[]
+  calendarEvents            CalendarEvent[]
+  reservations              Reservation[]
+  deals                     Deal[]
+  providedExpenses          PropertyExpense[]    @relation("ExpenseProvider")
+  chargedOwnerExpenses      PropertyExpense[]    @relation("ExpenseOwner")
+  ownerSettlements          OwnerSettlement[]    @relation("OwnerSettlementContact")
+  guaranteedLeases          PropertyLease[]      @relation("LeaseGuarantor")
+  providerProfile           ProviderProfile?
+  providedMaintenance       MaintenanceRequest[] @relation("MaintenanceProvider")
 
   @@index([tenantId, lastName, firstName])
   @@index([tenantId, email])
@@ -525,11 +584,13 @@ model PropertyRenter {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  propertyLeases PropertyLease[]
-  garageLeases   GarageLease[]
-  debts          Debt[]
-  documents      Document[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  propertyLeases      PropertyLease[]
+  garageLeases        GarageLease[]
+  debts               Debt[]
+  documents           Document[]
+  maintenanceRequests MaintenanceRequest[]
+  inspections         Inspection[]
 
   @@unique([tenantId, dni])
   @@index([tenantId, email])
@@ -600,6 +661,8 @@ model Property {
   deals                 Deal[]
   propertyExpenses      PropertyExpense[]
   settlementLines       OwnerSettlementLine[]
+  maintenanceRequests   MaintenanceRequest[]
+  inspections           Inspection[]
 
   @@unique([tenantId, code])
   @@index([tenantId, status])
@@ -689,15 +752,17 @@ model PropertyLease {
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
-  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  property         Property        @relation(fields: [propertyId], references: [id])
-  renter           PropertyRenter  @relation(fields: [renterId], references: [id])
-  guarantor        Contact?        @relation("LeaseGuarantor", fields: [guarantorContactId], references: [id], onDelete: SetNull)
-  rentHistory      RentHistory[]
-  debts            Debt[]
-  documents        Document[]
-  recurringCharges RecurringCharge[]
-  deal             Deal?
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property            Property             @relation(fields: [propertyId], references: [id])
+  renter              PropertyRenter       @relation(fields: [renterId], references: [id])
+  guarantor           Contact?             @relation("LeaseGuarantor", fields: [guarantorContactId], references: [id], onDelete: SetNull)
+  rentHistory         RentHistory[]
+  debts               Debt[]
+  documents           Document[]
+  recurringCharges    RecurringCharge[]
+  deal                Deal?
+  maintenanceRequests MaintenanceRequest[]
+  inspections         Inspection[]
 
   @@index([tenantId, status])
   @@index([tenantId, endDate])
@@ -815,27 +880,33 @@ model Payment {
 }
 
 model Document {
-  id              String   @id @default(uuid())
-  tenantId        String
-  propertyId      String?
-  renterId        String?
-  propertyLeaseId String?
-  category        String   @db.VarChar(60)
-  fileName        String   @db.VarChar(255)
-  fileUrl         String   @db.VarChar(500)
-  fileSize        Int?
-  mimeType        String?  @db.VarChar(100)
-  uploadedAt      DateTime @default(now())
+  id                   String   @id @default(uuid())
+  tenantId             String
+  propertyId           String?
+  renterId             String?
+  propertyLeaseId      String?
+  maintenanceRequestId String?
+  inspectionId         String?
+  category             String   @db.VarChar(60)
+  fileName             String   @db.VarChar(255)
+  fileUrl              String   @db.VarChar(500)
+  fileSize             Int?
+  mimeType             String?  @db.VarChar(100)
+  uploadedAt           DateTime @default(now())
 
-  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  property      Property?       @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  renter        PropertyRenter? @relation(fields: [renterId], references: [id], onDelete: SetNull)
-  propertyLease PropertyLease?  @relation(fields: [propertyLeaseId], references: [id], onDelete: SetNull)
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property           Property?           @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  renter             PropertyRenter?     @relation(fields: [renterId], references: [id], onDelete: SetNull)
+  propertyLease      PropertyLease?      @relation(fields: [propertyLeaseId], references: [id], onDelete: SetNull)
+  maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id], onDelete: SetNull)
+  inspection         Inspection?         @relation(fields: [inspectionId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, category])
   @@index([propertyId])
   @@index([renterId])
   @@index([propertyLeaseId])
+  @@index([maintenanceRequestId])
+  @@index([inspectionId])
 }
 
 model TenantSetting {
@@ -1236,4 +1307,141 @@ model RecurringCharge {
 
   @@index([tenantId, active])
   @@index([propertyLeaseId, active])
+}
+
+// ==========================================
+// FASE 3 — MANTENIMIENTO + INSPECCIONES
+// ==========================================
+model ProviderProfile {
+  id            String   @id @default(uuid())
+  tenantId      String
+  contactId     String   @unique
+  specialties   Json?
+  rating        Decimal? @db.Decimal(3, 2)
+  insuranceInfo String?  @db.VarChar(255)
+  isActive      Boolean  @default(true)
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, isActive])
+}
+
+model MaintenanceRequest {
+  id                 String                @id @default(uuid())
+  tenantId           String
+  propertyId         String
+  propertyLeaseId    String?
+  renterId           String?
+  providerContactId  String?
+  assignedUserId     String?
+  category           String                @db.VarChar(80)
+  priority           MaintenancePriority   @default(NORMAL)
+  status             MaintenanceStatus     @default(OPEN)
+  title              String                @db.VarChar(180)
+  description        String                @db.Text
+  reportedBy         String?               @db.VarChar(120)
+  quotedAmount       Decimal?              @db.Decimal(14, 2)
+  approvedAmount     Decimal?              @db.Decimal(14, 2)
+  actualCost         Decimal?              @db.Decimal(14, 2)
+  costBearer         MaintenanceCostBearer @default(UNASSIGNED)
+  ownerApprovedAt    DateTime?
+  scheduledAt        DateTime?
+  promisedAt         DateTime?
+  startedAt          DateTime?
+  resolvedAt         DateTime?
+  resolutionNotes    String?               @db.Text
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property      Property        @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  propertyLease PropertyLease?  @relation(fields: [propertyLeaseId], references: [id], onDelete: SetNull)
+  renter        PropertyRenter? @relation(fields: [renterId], references: [id], onDelete: SetNull)
+  provider      Contact?        @relation("MaintenanceProvider", fields: [providerContactId], references: [id], onDelete: SetNull)
+  assignedUser  User?           @relation("MaintenanceAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  events        MaintenanceEvent[]
+  documents     Document[]
+  findings      InspectionFinding[]
+
+  @@index([tenantId, status, priority])
+  @@index([tenantId, providerContactId, status])
+  @@index([propertyId, status])
+  @@index([propertyLeaseId])
+  @@index([renterId])
+  @@index([assignedUserId, status])
+}
+
+model MaintenanceEvent {
+  id                   String             @id @default(uuid())
+  tenantId             String
+  maintenanceRequestId String
+  actorUserId          String?
+  fromStatus           MaintenanceStatus?
+  toStatus             MaintenanceStatus?
+  note                 String?            @db.Text
+  createdAt            DateTime           @default(now())
+
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  maintenanceRequest MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+  actor              User?              @relation("MaintenanceEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([maintenanceRequestId, createdAt])
+}
+
+model Inspection {
+  id              String           @id @default(uuid())
+  tenantId        String
+  propertyId      String
+  propertyLeaseId String?
+  renterId        String?
+  inspectorUserId String?
+  type            InspectionType
+  status          InspectionStatus @default(DRAFT)
+  scheduledAt     DateTime?
+  performedAt     DateTime?
+  checklist       Json?
+  summary         String?          @db.Text
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property      Property        @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  propertyLease PropertyLease?  @relation(fields: [propertyLeaseId], references: [id], onDelete: SetNull)
+  renter        PropertyRenter? @relation(fields: [renterId], references: [id], onDelete: SetNull)
+  inspector     User?           @relation("InspectionInspector", fields: [inspectorUserId], references: [id], onDelete: SetNull)
+  findings      InspectionFinding[]
+  documents     Document[]
+
+  @@index([tenantId, status, scheduledAt])
+  @@index([propertyId, performedAt])
+  @@index([propertyLeaseId])
+  @@index([renterId])
+  @@index([inspectorUserId, status])
+}
+
+model InspectionFinding {
+  id                   String             @id @default(uuid())
+  tenantId             String
+  inspectionId         String
+  maintenanceRequestId String?
+  severity             InspectionSeverity @default(INFO)
+  area                 String?            @db.VarChar(100)
+  description          String             @db.Text
+  photos               Json?
+  resolved             Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inspection         Inspection          @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, severity, resolved])
+  @@index([inspectionId])
+  @@index([maintenanceRequestId])
 }
