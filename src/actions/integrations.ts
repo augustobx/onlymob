@@ -5,14 +5,15 @@ import { revalidatePath } from 'next/cache';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { platformPrisma } from '@/lib/prisma-core';
-import { auditTenantAction, requireTenantAdmin } from '@/lib/tenant-guard';
+import { auditTenantAction } from '@/lib/tenant-guard';
+import { requirePermission } from '@/lib/permissions';
 import { API_SCOPES, WEBHOOK_EVENTS, createApiCredential, emitWebhookEvent } from '@/lib/integrations';
 
 const KeySchema = z.object({ name: z.string().min(2).max(120), scopes: z.array(z.string()).min(1) });
 const WebhookSchema = z.object({ name: z.string().min(2).max(120), url: z.string().url().max(500), events: z.array(z.string()).min(1) });
 
 export async function getIntegrationsDataAction() {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('integrations', 'read');
   const [credentials, endpoints, deliveries] = await Promise.all([
     platformPrisma.$queryRaw<Array<{ id:string; name:string; tokenPrefix:string; scopes:string; isActive:number|boolean; lastUsedAt:Date|null; createdAt:Date }>>(Prisma.sql`SELECT id,name,tokenPrefix,scopes,isActive,lastUsedAt,createdAt FROM ApiCredential WHERE tenantId=${tenant.id} ORDER BY createdAt DESC`),
     platformPrisma.$queryRaw<Array<{ id:string; name:string; url:string; events:string; isActive:number|boolean; createdAt:Date }>>(Prisma.sql`SELECT id,name,url,events,isActive,createdAt FROM WebhookEndpoint WHERE tenantId=${tenant.id} ORDER BY createdAt DESC`),
@@ -29,7 +30,7 @@ export async function getIntegrationsDataAction() {
 function safeArray(value: string) { try { const parsed=JSON.parse(value); return Array.isArray(parsed) ? parsed.map(String) : []; } catch { return []; } }
 
 export async function createApiCredentialAction(input: z.input<typeof KeySchema>) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('integrations', 'manage');
   const data = KeySchema.parse(input);
   const invalid = data.scopes.filter((scope) => !API_SCOPES.includes(scope as any));
   if (invalid.length) throw new Error('Scope inválido.');
@@ -40,7 +41,7 @@ export async function createApiCredentialAction(input: z.input<typeof KeySchema>
 }
 
 export async function revokeApiCredentialAction(id: string) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('integrations', 'manage');
   const changed = await platformPrisma.$executeRaw(Prisma.sql`UPDATE ApiCredential SET isActive=false WHERE id=${id} AND tenantId=${tenant.id}`);
   if (!changed) throw new Error('Credencial no encontrada.');
   await auditTenantAction({ tenantId: tenant.id, actorUserId: session.userId, action: 'API_CREDENTIAL_REVOKED', entityType: 'ApiCredential', entityId: id });
@@ -48,7 +49,7 @@ export async function revokeApiCredentialAction(id: string) {
 }
 
 export async function createWebhookAction(input: z.input<typeof WebhookSchema>) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('integrations', 'manage');
   const data = WebhookSchema.parse(input);
   if (data.events.some((event) => !WEBHOOK_EVENTS.includes(event as any))) throw new Error('Evento inválido.');
   const id = randomUUID();
@@ -58,13 +59,13 @@ export async function createWebhookAction(input: z.input<typeof WebhookSchema>) 
 }
 
 export async function toggleWebhookAction(id: string, active: boolean) {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('integrations', 'manage');
   const changed = await platformPrisma.$executeRaw(Prisma.sql`UPDATE WebhookEndpoint SET isActive=${active},updatedAt=${new Date()} WHERE id=${id} AND tenantId=${tenant.id}`);
   if (!changed) throw new Error('Webhook no encontrado.');
   revalidatePath('/integraciones'); return { success: true };
 }
 
 export async function testWebhookAction() {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('integrations', 'manage');
   return emitWebhookEvent(tenant.id, 'property.updated', { test: true, tenantId: tenant.id });
 }
