@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Header } from '@/components/layout/header';
 import { getRentAdjustmentScheduleAction } from '@/actions/rent-adjustments';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { adjustmentDisplayLabel } from '@/lib/lease-labels';
 import { ArrowLeft, ArrowUpRight, CalendarClock, Clock3, FileText, Home, TriangleAlert } from 'lucide-react';
 import { DataTable, EmptyState, StatusPill } from '@/components/entity-360/entity-360-ui';
 
@@ -150,8 +151,8 @@ export default async function RentAdjustmentsPage({
                     </Link>,
                     <span key="alquiler" className="font-mono font-black text-slate-900">{formatCurrency(item.currentRent)}</span>,
                     <div key="ajuste">
-                      <p className="font-semibold text-slate-700">{item.adjustmentIndex || item.adjustmentMethod || 'Contractual'}</p>
-                      <p className="text-[10px] text-slate-400">{item.inferred ? 'Fecha calculada' : 'Fecha programada'}</p>
+                      <p className="font-semibold text-slate-700">{adjustmentDisplayLabel(item.adjustmentIndex, item.adjustmentMethod)}</p>
+                      <p className="text-[10px] text-slate-400">{item.inferred ? 'Fecha estimada según contrato' : 'Fecha programada'}</p>
                     </div>,
                     <span key="periodicidad" className="font-semibold text-slate-600">Cada {item.updatePeriodMonths} meses</span>,
                     <StatusPill key="estado" tone={item.isOverdue ? 'danger' : item.daysUntil <= 30 ? 'warning' : 'info'}>
