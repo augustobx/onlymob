@@ -5,11 +5,14 @@ import Link from 'next/link';
 import {
   ArrowUpDown,
   Building,
+  CircleDollarSign,
   Edit,
   ExternalLink,
+  KeyRound,
   Plus,
   Search,
   Trash2,
+  UserRound,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { deletePropertyAction, savePropertyAction } from '@/actions/properties';
@@ -114,6 +117,12 @@ export function PropertyTable({ initialProperties }: { initialProperties: Proper
       });
   }, [initialProperties, search, selectedType, selectedStatus, selectedOperation, sortAsc]);
 
+  const summary = useMemo(() => ({
+    rented: initialProperties.filter((p) => p.status === 'ALQUILADO').length,
+    available: initialProperties.filter((p) => p.status !== 'ALQUILADO' && p.status !== 'MANTENIMIENTO').length,
+    withDebt: initialProperties.filter((p) => (p.activeLease?.pendingDebtTotal || 0) > 0).length,
+  }), [initialProperties]);
+
   function openModal(property?: PropertyItem) {
     setEditingProperty(property || null);
     setError('');
@@ -177,18 +186,31 @@ export function PropertyTable({ initialProperties }: { initialProperties: Proper
     });
   }
 
+  const summaryCards = [
+    { label: 'Total', value: initialProperties.length, icon: Building, tone: 'text-indigo-600 bg-indigo-50' },
+    { label: 'Alquiladas', value: summary.rented, icon: KeyRound, tone: 'text-emerald-700 bg-emerald-50' },
+    { label: 'Disponibles', value: summary.available, icon: Building, tone: 'text-sky-700 bg-sky-50' },
+    { label: 'Con saldo', value: summary.withDebt, icon: CircleDollarSign, tone: summary.withDebt ? 'text-rose-700 bg-rose-50' : 'text-slate-600 bg-slate-100' },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[230px] sm:w-72">
+    <div className="space-y-4">
+      <section className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        {summaryCards.map((item) => {
+          const Icon = item.icon;
+          return <div key={item.label} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-xs"><div className={`w-9 h-9 rounded-lg flex items-center justify-center ${item.tone}`}><Icon className="w-4 h-4" /></div><div><p className="text-[9px] uppercase tracking-[.1em] font-bold text-slate-400">{item.label}</p><p className="text-lg leading-none font-extrabold text-slate-900 mt-1">{item.value}</p></div></div>;
+        })}
+      </section>
+
+      <section className="property-toolbar">
+        <div className="property-toolbar__filters">
+          <div className="property-search">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Código, dirección, localidad, inquilino o propietario..."
+              placeholder="Buscar por código, dirección, localidad, inquilino o propietario..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             />
           </div>
 
@@ -202,102 +224,120 @@ export function PropertyTable({ initialProperties }: { initialProperties: Proper
             ['ALL', 'Todos los estados'], ['DISPONIBLE', 'Disponible'], ['ALQUILADO', 'Alquilado'], ['MANTENIMIENTO', 'Mantenimiento'],
           ]} />
 
-          <button type="button" onClick={() => setSortAsc((value) => !value)} className="inline-flex items-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold">
+          <button type="button" onClick={() => setSortAsc((value) => !value)} className="property-sort">
             <ArrowUpDown className="w-3.5 h-3.5" /> Código {sortAsc ? '↑' : '↓'}
           </button>
         </div>
 
-        <button type="button" onClick={() => openModal()} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs">
-          <Plus className="w-4 h-4" /> Nueva Propiedad
+        <button type="button" onClick={() => openModal()} className="btn-primary shrink-0">
+          <Plus className="w-4 h-4" /> Nueva propiedad
         </button>
-      </div>
+      </section>
 
       {error && !isModalOpen && (
         <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 text-sm rounded-xl">{error}</div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+      <div className="flex items-center justify-between px-1 pt-1">
+        <p className="text-[10px] text-slate-500"><strong className="text-slate-800">{filtered.length}</strong> propiedades en esta vista</p>
+        <p className="text-[9px] uppercase tracking-[.12em] font-bold text-slate-400">Ficha 360 disponible en cada inmueble</p>
+      </div>
+
+      <section className="property-grid">
         {filtered.map((property) => {
           const hasDebt = (property.activeLease?.pendingDebtTotal || 0) > 0;
           const mainPrice = property.operation === 'SALE' ? property.salePrice : property.rentPrice ?? property.baseRent;
+          const ownerName = property.owners?.find((owner) => owner.isPrimary)?.name || property.owners?.[0]?.name;
+          const statusClass = property.status === 'ALQUILADO'
+            ? 'property-status--rented'
+            : property.status === 'MANTENIMIENTO'
+              ? 'property-status--maintenance'
+              : 'property-status--available';
+          const statusLabel = property.status === 'ALQUILADO'
+            ? 'Alquilada'
+            : property.status === 'MANTENIMIENTO'
+              ? 'Mantenimiento'
+              : COMMERCIAL_LABELS[property.commercialStatus] || 'Disponible';
 
           return (
-            <div key={property.id} className="bg-white rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between overflow-hidden">
-              <div className="p-5">
-                <div className="flex items-start justify-between gap-2">
+            <article key={property.id} className="property-card">
+              <div className="property-card__body">
+                <div className="property-card__top">
                   <div>
-                    <span className="font-mono font-extrabold text-lg text-slate-900">{property.code}</span>
-                    <p className="text-[10px] uppercase tracking-wide font-bold text-indigo-600 mt-0.5">{OPERATION_LABELS[property.operation] || property.operation}</p>
+                    <div className="property-code"><span>{property.code}</span><span className="!bg-transparent !p-0 !min-w-0 !font-sans !h-auto">Inmueble</span></div>
+                    <p className="property-operation">{OPERATION_LABELS[property.operation] || property.operation}</p>
                   </div>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${property.status === 'ALQUILADO' ? 'bg-amber-100 text-amber-800' : property.status === 'MANTENIMIENTO' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                    {property.status === 'ALQUILADO' ? 'Alquilado' : property.status === 'MANTENIMIENTO' ? 'Mantenimiento' : COMMERCIAL_LABELS[property.commercialStatus] || 'Disponible'}
-                  </span>
+                  <span className={`property-status ${statusClass}`}>{statusLabel}</span>
                 </div>
 
-                <p className="text-xs font-semibold text-slate-500 mt-2 uppercase">{property.type}</p>
-                <p className="text-sm font-medium text-slate-700 mt-1 line-clamp-2">{property.address}</p>
-                {(property.city || property.province) && <p className="text-[11px] text-slate-400 mt-1">{[property.city, property.province].filter(Boolean).join(', ')}</p>}
+                <p className="property-type">{property.type}</p>
+                <h3 className="property-address">{property.address}</h3>
+                {(property.city || property.province) && <p className="property-location">{[property.city, property.province].filter(Boolean).join(' · ')}</p>}
 
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 mt-3 pt-3 border-t border-slate-100">
-                  {property.rooms != null && <span>{property.rooms} amb.</span>}
-                  {property.bedrooms != null && <span>{property.bedrooms} dorm.</span>}
-                  {property.bathrooms != null && <span>{property.bathrooms} baño/s</span>}
-                  {property.sqm != null && <span>{property.sqm} m²</span>}
-                </div>
-
-                {mainPrice != null && (
-                  <div className="mt-3 flex items-baseline justify-between gap-2">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Precio</span>
-                    <span className="font-mono font-extrabold text-sm text-slate-900">{money(mainPrice, property.currency)}</span>
+                {(property.rooms != null || property.bedrooms != null || property.bathrooms != null || property.sqm != null) && (
+                  <div className="property-features">
+                    {property.rooms != null && <span className="property-feature">{property.rooms} amb.</span>}
+                    {property.bedrooms != null && <span className="property-feature">{property.bedrooms} dorm.</span>}
+                    {property.bathrooms != null && <span className="property-feature">{property.bathrooms} baño/s</span>}
+                    {property.sqm != null && <span className="property-feature">{property.sqm} m²</span>}
                   </div>
                 )}
 
-                {property.owners && property.owners.length > 0 && (
-                  <div className="mt-3 p-2.5 bg-indigo-50/60 border border-indigo-100 rounded-lg text-xs">
-                    <span className="text-indigo-500 text-[10px] uppercase font-bold">Propietario</span>
-                    <p className="font-semibold text-indigo-900 truncate">{property.owners.find((owner) => owner.isPrimary)?.name || property.owners[0].name}</p>
+                {mainPrice != null && (
+                  <div className="property-finance">
+                    <div><small>{property.operation === 'SALE' ? 'Precio de venta' : 'Valor mensual'}</small><strong>{money(mainPrice, property.currency)}</strong></div>
+                    {property.expenses != null && <div className="text-right"><small>Expensas</small><strong className="!text-[10px] !font-semibold">{money(property.expenses, property.currency)}</strong></div>}
+                  </div>
+                )}
+
+                {ownerName && (
+                  <div className="property-person">
+                    <div className="flex items-center gap-2"><UserRound className="w-3.5 h-3.5 text-indigo-500" /><span className="property-person__label">Propietario</span></div>
+                    <p className="property-person__name">{ownerName}</p>
                   </div>
                 )}
 
                 {property.activeLease && (
-                  <div className="mt-3 p-2.5 bg-slate-50 rounded-lg text-xs space-y-1">
-                    <p className="text-slate-500">Inquilino: <span className="font-semibold text-slate-800">{property.activeLease.renterName}</span></p>
-                    <div className="flex items-center justify-between font-mono pt-1 gap-2">
-                      <span className="text-slate-600">{formatCurrency(property.activeLease.currentRent)}/mes</span>
-                      {hasDebt && <span className="text-rose-600 font-bold">Debe: {formatCurrency(property.activeLease.pendingDebtTotal)}</span>}
+                  <div className="property-person">
+                    <div className="flex items-center gap-2"><KeyRound className="w-3.5 h-3.5 text-emerald-600" /><span className="property-person__label">Ocupación actual</span></div>
+                    <p className="property-person__name">{property.activeLease.renterName}</p>
+                    <div className="property-person__meta">
+                      <span>{formatCurrency(property.activeLease.currentRent)}/mes</span>
+                      {hasDebt && <span className="property-person__debt">Saldo {formatCurrency(property.activeLease.pendingDebtTotal)}</span>}
                     </div>
                   </div>
                 )}
               </div>
 
-              <div className="px-5 py-3 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-xs">
-                <Link href={`/propiedades/${property.id}`} className="font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
-                  Ver Ficha <ExternalLink className="w-3.5 h-3.5" />
+              <footer className="property-card__footer">
+                <Link href={`/propiedades/${property.id}`} className="property-card__link">
+                  Abrir propiedad 360 <ExternalLink className="w-3.5 h-3.5" />
                 </Link>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => openModal(property)} className="p-1.5 text-slate-500 hover:text-indigo-600 rounded-md hover:bg-slate-200/60" title="Editar"><Edit className="w-4 h-4" /></button>
-                  <button type="button" onClick={() => handleDelete(property.id)} className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50" title="Archivar"><Trash2 className="w-4 h-4" /></button>
+                <div className="flex items-center gap-1.5">
+                  <button type="button" onClick={() => openModal(property)} className="icon-action" title="Editar propiedad"><Edit className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => handleDelete(property.id)} className="icon-action hover:!text-rose-600 hover:!border-rose-200 hover:!bg-rose-50" title="Archivar propiedad"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
-              </div>
-            </div>
+              </footer>
+            </article>
           );
         })}
-      </div>
+      </section>
 
       {filtered.length === 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-          <Building className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+        <div className="bg-white rounded-2xl border border-slate-200 p-14 text-center shadow-xs">
+          <Building className="w-11 h-11 text-slate-300 mx-auto mb-3" />
           <h3 className="text-base font-bold text-slate-900">No se encontraron propiedades</h3>
           <p className="text-xs text-slate-500 mt-1">Modificá los filtros o creá una nueva propiedad.</p>
         </div>
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full p-6 space-y-5 my-6">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full p-6 space-y-5 my-6 border border-white/30">
             <div>
-              <h3 className="text-lg font-bold text-slate-900">{editingProperty ? `Editar Propiedad ${editingProperty.code}` : 'Nueva Propiedad'}</h3>
-              <p className="text-xs text-slate-500 mt-1">Ficha comercial y administrativa principal del inmueble.</p>
+              <p className="text-[9px] font-bold uppercase tracking-[.14em] text-indigo-500">Propiedad</p>
+              <h3 className="text-lg font-bold text-slate-900 mt-1">{editingProperty ? `Editar ${editingProperty.code} · ${editingProperty.address}` : 'Nueva propiedad'}</h3>
+              <p className="text-xs text-slate-500 mt-1">Datos comerciales y administrativos principales del inmueble.</p>
             </div>
 
             {error && <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 text-sm rounded-lg">{error}</div>}
@@ -341,14 +381,14 @@ export function PropertyTable({ initialProperties }: { initialProperties: Proper
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field name="expensesShare" label="% expensas a cargo" type="number" min="0" max="100" step="0.01" defaultValue={editingProperty?.expensesShare ?? ''} />
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Notas internas</label>
-                  <textarea name="notes" rows={3} defaultValue={editingProperty?.notes || ''} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                  <label className="form-label">Notas internas</label>
+                  <textarea name="notes" rows={3} defaultValue={editingProperty?.notes || ''} className="form-input" />
                 </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-                <button type="button" onClick={closeModal} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold">Cancelar</button>
-                <button type="submit" disabled={isPending} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-xs">{isPending ? 'Guardando...' : 'Guardar Propiedad'}</button>
+                <button type="button" onClick={closeModal} className="btn-secondary">Cancelar</button>
+                <button type="submit" disabled={isPending} className="btn-primary">{isPending ? 'Guardando...' : 'Guardar propiedad'}</button>
               </div>
             </form>
           </div>
@@ -360,7 +400,7 @@ export function PropertyTable({ initialProperties }: { initialProperties: Proper
 
 function FilterSelect({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: Array<[string, string]> }) {
   return (
-    <select value={value} onChange={(event) => onChange(event.target.value)} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+    <select value={value} onChange={(event) => onChange(event.target.value)} className="property-filter">
       {options.map(([optionValue, label]) => <option key={optionValue} value={optionValue}>{label}</option>)}
     </select>
   );
@@ -369,8 +409,8 @@ function FilterSelect({ value, onChange, options }: { value: string; onChange: (
 function SelectField({ name, label, defaultValue, options }: { name: string; label: string; defaultValue: string; options: Array<[string, string]> }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
-      <select name={name} defaultValue={defaultValue} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+      <label className="form-label">{label}</label>
+      <select name={name} defaultValue={defaultValue} className="form-input">
         {options.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}
       </select>
     </div>
@@ -380,8 +420,8 @@ function SelectField({ name, label, defaultValue, options }: { name: string; lab
 function Field({ name, label, defaultValue, type = 'text', required, min, max, step }: { name: string; label: string; defaultValue: string | number; type?: string; required?: boolean; min?: string; max?: string; step?: string }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
-      <input name={name} type={type} required={required} min={min} max={max} step={step} defaultValue={defaultValue} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+      <label className="form-label">{label}</label>
+      <input name={name} type={type} required={required} min={min} max={max} step={step} defaultValue={defaultValue} className="form-input" />
     </div>
   );
 }
