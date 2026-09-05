@@ -66,7 +66,7 @@ async function insertMessage(input: {
 }
 
 export async function getCommunicationCenterAction() {
-  const { tenant } = await requirePermission('contacts','read');
+  const { tenant } = await requirePermission('communications','read');
   const [threads, properties, contacts, renters] = await Promise.all([
     platformPrisma.$queryRaw<Array<Record<string,unknown>>>(Prisma.sql`
       SELECT t.id,t.subject,t.status,t.propertyId,t.contactId,t.renterId,t.lastMessageAt,t.createdAt,t.updatedAt,
@@ -92,7 +92,7 @@ export async function getCommunicationCenterAction() {
 }
 
 export async function getCommunicationThreadAction(threadId:string) {
-  const { tenant } = await requirePermission('contacts','read');
+  const { tenant } = await requirePermission('communications','read');
   const rows = await platformPrisma.$queryRaw<Array<Record<string,unknown>>>(Prisma.sql`
     SELECT m.id,m.channel,m.direction,m.audienceType,m.recipientRefId,m.recipientAddress,m.body,m.status,m.externalId,m.failureMessage,m.sentAt,m.deliveredAt,m.readAt,m.createdAt,u.name AS senderName
     FROM CommunicationMessage m LEFT JOIN User u ON u.id=m.senderUserId AND u.tenantId=m.tenantId
@@ -102,7 +102,7 @@ export async function getCommunicationThreadAction(threadId:string) {
 }
 
 export async function createCommunicationThreadAction(input:z.input<typeof ThreadSchema>) {
-  const { tenant, session } = await requirePermission('contacts','update');
+  const { tenant, session } = await requirePermission('communications','create');
   const data = ThreadSchema.parse(input);
   const links = await assertLinks(tenant.id,data);
   const target = recipient(data,links);
@@ -122,7 +122,7 @@ export async function createCommunicationThreadAction(input:z.input<typeof Threa
 }
 
 export async function sendCommunicationMessageAction(input:{threadId:string;channel:typeof CHANNELS[number];audienceType:typeof AUDIENCES[number];body:string}) {
-  const { tenant, session } = await requirePermission('contacts','update');
+  const { tenant, session } = await requirePermission('communications','create');
   const body = z.string().min(1).max(10000).parse(input.body);
   const threadRows = await platformPrisma.$queryRaw<Array<{id:string;propertyId:string|null;contactId:string|null;renterId:string|null}>>(Prisma.sql`SELECT id,propertyId,contactId,renterId FROM CommunicationThread WHERE id=${input.threadId} AND tenantId=${tenant.id} LIMIT 1`);
   const thread = threadRows[0]; if (!thread) throw new Error('Conversación no encontrada.');
@@ -136,7 +136,7 @@ export async function sendCommunicationMessageAction(input:{threadId:string;chan
 }
 
 export async function setCommunicationThreadStatusAction(threadId:string,status:'OPEN'|'CLOSED') {
-  const {tenant}=await requirePermission('contacts','update');
+  const {tenant}=await requirePermission('communications','update');
   await platformPrisma.$executeRaw(Prisma.sql`UPDATE CommunicationThread SET status=${status},updatedAt=${new Date()} WHERE id=${threadId} AND tenantId=${tenant.id}`);
   revalidatePath('/comunicaciones'); return {success:true};
 }
