@@ -3,7 +3,6 @@ import { Building2, LogOut } from 'lucide-react';
 import { getOwnerSession } from '@/lib/auth';
 import { getOwnerPortalDataAction, logoutOwnerAction } from '@/actions/owner-portal';
 import { getOwnerPortalCommunicationsAction } from '@/actions/communications';
-import { PortalCommunications } from '@/components/portal/portal-communications';
 import { OwnerPortalClient } from './owner-portal-client';
 
 export const dynamic = 'force-dynamic';
@@ -30,7 +29,6 @@ export default async function OwnerPortalPage() {
       </header>
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6">
         <OwnerPortalClient data={{ ...(data as any), communications }} />
-        <PortalCommunications messages={communications as any[]} audience="OWNER" />
       </main>
     </div>
   );
