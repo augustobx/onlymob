@@ -11,9 +11,9 @@ export type TenantContext = {
   timezone: string;
   logoUrl?: string | null;
   receiptHeader?: string | null;
-  address?: string | null;
-  phone?: string | null;
-  cuit?: string | null;
+  address: string | null;
+  phone: string | null;
+  cuit: string | null;
 };
 
 const PLATFORM_HOST = normalizeHostname(process.env.PLATFORM_HOST || 'onlymob.nanoapps.ar');
@@ -92,9 +92,9 @@ function toContext(tenant: any, hostname: string): TenantContext {
     timezone: tenant.timezone || 'America/Argentina/Buenos_Aires',
     logoUrl: tenant.logoUrl,
     receiptHeader: tenant.receiptHeader,
-    address: tenant.address,
-    phone: tenant.phone,
-    cuit: tenant.cuit,
+    address: tenant.address ?? null,
+    phone: tenant.phone ?? null,
+    cuit: tenant.cuit ?? null,
   };
 }
 
