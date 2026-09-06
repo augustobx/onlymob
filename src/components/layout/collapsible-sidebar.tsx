@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Building2,LayoutDashboard,Home,Warehouse,FileText,CreditCard,Users,ContactRound,Settings,LogOut,
   KanbanSquare,CalendarDays,Handshake,Landmark,Wrench,Bell,FolderOpen,ChartNoAxesCombined,Plug,MessageSquare,WalletCards,CalendarClock,ChevronDown,
-  Zap,Printer,TrendingUp,
+  Printer,TrendingUp,
 } from 'lucide-react';
 import { logoutAdminAction } from '@/actions/auth-actions';
 
@@ -18,7 +18,7 @@ const matches=(pathname:string,item:NavItem)=>pathname===itemRoute(item)||pathna
 
 const groups:NavGroup[]=[
  {label:'General',items:[{name:'Dashboard',href:'/dashboard',icon:LayoutDashboard},{name:'Analytics',href:'/analytics',icon:ChartNoAxesCombined}]},
- {label:'Rápidos',items:[{name:'Aumentos del mes',href:'/aumentos',icon:TrendingUp,quick:true},{name:'Aumento automático',href:'/ajustes#aumentos-automaticos',icon:Zap,quick:true},{name:'Recibos del mes',href:'/cobranzas#recibos-mes',icon:Printer,quick:true}]},
+ {label:'Rápidos',items:[{name:'Aumentos',href:'/aumentos',icon:TrendingUp,quick:true},{name:'Impresión',href:'/impresion/recibos',icon:Printer,quick:true},{name:'Alquileres',href:'/rapidos/alquileres',icon:Home,quick:true}]},
  {label:'Comercial',items:[{name:'CRM',href:'/crm',icon:KanbanSquare},{name:'Agenda',href:'/agenda',icon:CalendarDays},{name:'Propiedades',href:'/propiedades',icon:Home},{name:'Operaciones',href:'/operaciones',icon:Handshake},{name:'Contactos',href:'/contactos',icon:ContactRound}]},
  {label:'Administración',items:[{name:'Inquilinos',href:'/inquilinos',icon:Users},{name:'Contratos',href:'/contratos',icon:FileText},{name:'Aumentos',href:'/aumentos',icon:CalendarClock},{name:'Cobranzas',href:'/cobranzas',icon:CreditCard},{name:'Finanzas',href:'/finanzas',icon:WalletCards},{name:'Liquidaciones',href:'/administracion',icon:Landmark},{name:'Cocheras',href:'/cocheras',icon:Warehouse}]},
  {label:'Operación',items:[{name:'Mantenimiento',href:'/mantenimiento',icon:Wrench},{name:'Documentos',href:'/documentos',icon:FolderOpen},{name:'Comunicaciones',href:'/comunicaciones',icon:MessageSquare},{name:'Notificaciones',href:'/notificaciones',icon:Bell}]},
