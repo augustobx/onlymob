@@ -2,6 +2,7 @@ import { getLatestICL } from '@/lib/bcra';
 import { TrendingUp } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { GlobalSearch } from '@/components/layout/global-search';
+import { ModuleHelp } from '@/components/layout/module-help';
 
 interface HeaderProps {
   title: string;
@@ -28,6 +29,7 @@ export async function Header({ title, subtitle, actionButton }: HeaderProps) {
           <strong>{icl.valor.toFixed(2)}</strong>
           <small>{formatDate(icl.fecha)}</small>
         </div>
+        <ModuleHelp title={title} />
         {actionButton && <div className="shrink-0">{actionButton}</div>}
       </div>
       <div className="md:hidden mt-4"><GlobalSearch /></div>
