@@ -5,6 +5,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { adjustmentDisplayLabel } from '@/lib/lease-labels';
 import { ArrowLeft, ArrowUpRight, CalendarClock, Clock3, FileText, Home, TriangleAlert } from 'lucide-react';
 import { DataTable, EmptyState, StatusPill } from '@/components/entity-360/entity-360-ui';
+import { BulkAdjustmentsClient } from './bulk-adjustments-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,6 +117,12 @@ export default async function RentAdjustmentsPage({
             </div>
           </section>
 
+          <BulkAdjustmentsClient
+            items={selectedItems}
+            groupLabel={selectedBucket?.label || 'Aumentos'}
+            globalAutoEnabled={schedule.globalAutoEnabled}
+          />
+
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 md:flex-row md:items-center md:justify-between">
               <div>
@@ -135,7 +142,7 @@ export default async function RentAdjustmentsPage({
             <div className="p-4">
               {selectedItems.length ? (
                 <DataTable
-                  headers={['Fecha', 'Inquilino', 'Propiedad', 'Alquiler actual', 'Ajuste', 'Periodicidad', 'Estado', 'Acciones']}
+                  headers={['Fecha', 'Inquilino', 'Propiedad', 'Alquiler actual', 'Ajuste', 'Periodicidad', 'Auto', 'Estado', 'Acciones']}
                   rows={selectedItems.map((item) => [
                     <div key="fecha">
                       <p className={`font-black ${item.isOverdue ? 'text-rose-600' : 'text-slate-900'}`}>{formatDate(new Date(item.dueDate))}</p>
@@ -155,6 +162,9 @@ export default async function RentAdjustmentsPage({
                       <p className="text-[10px] text-slate-400">{item.inferred ? 'Fecha estimada según contrato' : 'Fecha programada'}</p>
                     </div>,
                     <span key="periodicidad" className="font-semibold text-slate-600">Cada {item.updatePeriodMonths} meses</span>,
+                    <StatusPill key="auto" tone={item.autoAdjustmentEnabled ? 'success' : 'neutral'}>
+                      {item.autoAdjustmentEnabled ? 'AUTO' : 'MANUAL'}
+                    </StatusPill>,
                     <StatusPill key="estado" tone={item.isOverdue ? 'danger' : item.daysUntil <= 30 ? 'warning' : 'info'}>
                       {item.isOverdue ? 'AUMENTO PENDIENTE' : item.daysUntil <= 30 ? 'PRÓXIMO' : 'PROGRAMADO'}
                     </StatusPill>,
