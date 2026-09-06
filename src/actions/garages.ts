@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { platformPrisma } from '@/lib/prisma-core';
 import { auditTenantAction } from '@/lib/tenant-guard';
 import { requirePermission } from '@/lib/permissions';
+import { assertTenantPlanLimit } from '@/lib/saas';
 import { z } from 'zod';
 
 const GarageSchema = z.object({
@@ -54,6 +55,8 @@ export async function getGaragesAction() {
 export async function saveGarageAction(data: { id?: string; name: string; address: string; totalSpaces: number }) {
   const { tenant, session } = await requirePermission('garages', data.id ? 'update' : 'create');
   const validated = GarageSchema.parse(data);
+
+  if (!data.id) await assertTenantPlanLimit(tenant.id, 'garages');
 
   const garage = await platformPrisma.$transaction(async (tx) => {
     if (!data.id) {
