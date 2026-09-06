@@ -2,6 +2,7 @@ import 'server-only';
 
 import { headers, cookies } from 'next/headers';
 import { platformPrisma } from '@/lib/prisma-core';
+import { subscriptionStatusAllowsAccess } from '@/lib/saas-policy';
 
 export type TenantContext = {
   id: string;
@@ -39,11 +40,13 @@ export async function getRequestHostname() {
 }
 
 async function subscriptionAllowsAccess(tenantId: string) {
-  const subscription = await platformPrisma.tenantSubscription.findFirst({ where: { tenantId }, orderBy: { createdAt: 'desc' }, select: { status: true, trialEndsAt: true } });
+  const subscription = await platformPrisma.tenantSubscription.findFirst({
+    where: { tenantId },
+    orderBy: { createdAt: 'desc' },
+    select: { status: true, trialEndsAt: true },
+  });
   if (!subscription) return true;
-  if (subscription.status === 'SUSPENDED' || subscription.status === 'CANCELED') return false;
-  if (subscription.status === 'TRIAL' && subscription.trialEndsAt && subscription.trialEndsAt < new Date()) return false;
-  return true;
+  return subscriptionStatusAllowsAccess(subscription.status, subscription.trialEndsAt);
 }
 
 async function findTenantRecord(hostname: string) {
