@@ -7,21 +7,27 @@ import { platformPrisma } from '@/lib/prisma-core';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { publishDomainActivity } from '@/lib/domain-events';
 
-export const getTenantAdminContext = cache(async () => {
+export const getTenantUserContext = cache(async () => {
   const tenant = await resolveTenantContext();
   const session = await getAdminSession(tenant.id);
-
   if (!session) return null;
   return { tenant, session };
 });
 
+// Alias de compatibilidad para lecturas existentes. No implica privilegio ADMIN.
+export const getTenantAdminContext = getTenantUserContext;
+
+export async function requireTenantUser() {
+  const context = await getTenantUserContext();
+  if (!context) throw new Error('UNAUTHORIZED');
+  return context;
+}
+
+// Fail-closed: los actions legacy que todavía llamen a requireTenantAdmin
+// quedan reservados a ADMIN y nunca saltan el RBAC de un STAFF.
 export async function requireTenantAdmin() {
-  const context = await getTenantAdminContext();
-
-  if (!context) {
-    throw new Error('UNAUTHORIZED');
-  }
-
+  const context = await requireTenantUser();
+  if (context.session.role !== 'ADMIN') throw new Error('FORBIDDEN');
   return context;
 }
 
@@ -50,8 +56,6 @@ export async function auditTenantAction(input: {
     },
   });
 
-  // ActivityEvent es una proyección secundaria: nunca debe hacer fallar la
-  // operación principal si un endpoint externo o una integración está caída.
   try {
     await publishDomainActivity(input);
   } catch (error) {
@@ -68,9 +72,7 @@ export async function assertPropertyBelongsToTenant(tenantId: string, propertyId
 }
 
 export async function assertRenterBelongsToTenant(tenantId: string, renterId: string) {
-  const renter = await platformPrisma.propertyRenter.findFirst({
-    where: { id: renterId, tenantId },
-  });
+  const renter = await platformPrisma.propertyRenter.findFirst({ where: { id: renterId, tenantId } });
   if (!renter) throw new Error('Inquilino no encontrado para esta inmobiliaria.');
   return renter;
 }
@@ -80,17 +82,11 @@ export async function assertGarageSpacesBelongToTenant(tenantId: string, spaceId
   if (uniqueIds.length === 0) throw new Error('Seleccioná al menos una plaza.');
 
   const spaces = await platformPrisma.garageSpace.findMany({
-    where: {
-      id: { in: uniqueIds },
-      garage: { tenantId },
-    },
+    where: { id: { in: uniqueIds }, garage: { tenantId } },
     include: { garage: true },
   });
 
-  if (spaces.length !== uniqueIds.length) {
-    throw new Error('Una o más plazas no pertenecen a esta inmobiliaria.');
-  }
-
+  if (spaces.length !== uniqueIds.length) throw new Error('Una o más plazas no pertenecen a esta inmobiliaria.');
   return spaces;
 }
 
