@@ -23,7 +23,9 @@ const ThreadSchema = z.object({
   body: z.string().min(1).max(10000),
 });
 
-function serialize<T>(value: T): T { return JSON.parse(JSON.stringify(value)); }
+function serialize<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value, (_key, item) => typeof item === 'bigint' ? Number(item) : item));
+}
 
 async function assertLinks(tenantId: string, input: { propertyId?: string|null; contactId?: string|null; renterId?: string|null }) {
   const [property, contact, renter] = await Promise.all([
@@ -88,7 +90,12 @@ export async function getCommunicationCenterAction() {
     platformPrisma.contact.findMany({ where:{tenantId:tenant.id,archivedAt:null,isActive:true},select:{id:true,firstName:true,lastName:true,companyName:true,email:true,phone:true,roles:true},orderBy:[{lastName:'asc'},{firstName:'asc'}] }),
     platformPrisma.propertyRenter.findMany({ where:{tenantId:tenant.id,status:'ACTIVE'},select:{id:true,firstName:true,lastName:true,dni:true,email:true,phone:true},orderBy:[{lastName:'asc'},{firstName:'asc'}] }),
   ]);
-  return serialize({ threads, properties, contacts, renters });
+  const normalizedThreads = threads.map((thread) => ({
+    ...thread,
+    messageCount: Number(thread.messageCount || 0),
+    failedCount: Number(thread.failedCount || 0),
+  }));
+  return serialize({ threads: normalizedThreads, properties, contacts, renters });
 }
 
 export async function getCommunicationThreadAction(threadId:string) {
