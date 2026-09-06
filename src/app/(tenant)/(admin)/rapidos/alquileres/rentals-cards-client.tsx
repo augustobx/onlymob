@@ -37,6 +37,7 @@ export type QuickRental = {
   monthlyRent: number;
   endDate: string;
   contractHref: string;
+  propertyHref: string | null;
   overdue: boolean;
   openBalance: number;
   overdueBalance: number;
@@ -182,6 +183,11 @@ export function RentalsCardsClient({ rentals }: { rentals: QuickRental[] }) {
                 <Link href={item.contractHref} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-[11px] font-bold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
                   <FileText className="h-3.5 w-3.5" /> Contrato
                 </Link>
+                {item.propertyHref && (
+                  <Link href={item.propertyHref} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-[11px] font-bold text-indigo-700 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50">
+                    <Home className="h-3.5 w-3.5" /> Propiedad 360
+                  </Link>
+                )}
                 <button type="button" onClick={() => openCollections(item)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-2 text-[11px] font-bold text-white hover:bg-slate-800">
                   <CreditCard className="h-3.5 w-3.5" /> Cobrar / Recibo
                 </button>
