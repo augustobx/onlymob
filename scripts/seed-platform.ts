@@ -1,5 +1,4 @@
 import bcrypt from 'bcryptjs';
-import { Prisma } from '@prisma/client';
 import { platformPrisma } from '../src/lib/prisma-core';
 
 const SYSTEM_ROLES = [
@@ -35,9 +34,7 @@ async function seed() {
     { code:'INMOBILIARIA_ENTERPRISE',name:'Plan Enterprise',description:'Operación ampliada, múltiples usuarios y soporte prioritario',priceMonthly:85000,priceYearly:850000,maxProperties:1000,maxGarages:200,maxUsers:20,maxPublications:1000 },
   ];
   for (const plan of plans) {
-    const { maxPublications, ...prismaPlan } = plan;
-    await platformPrisma.plan.upsert({ where:{code:plan.code}, update:prismaPlan, create:prismaPlan });
-    await platformPrisma.$executeRaw(Prisma.sql`UPDATE Plan SET maxPublications=${maxPublications} WHERE code=${plan.code}`);
+    await platformPrisma.plan.upsert({ where:{code:plan.code}, update:plan, create:plan });
   }
 
   const tenants = await platformPrisma.tenant.findMany({ select: { id: true } });
