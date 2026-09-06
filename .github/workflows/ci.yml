@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/**
+      - release/**
   pull_request:
 
 jobs:
@@ -60,16 +61,18 @@ jobs:
         run: npx prisma generate
       - name: Validate Prisma schema
         run: npx prisma validate
-      - name: Unit and tenant isolation tests
+      - name: Unit, isolation and production hardening tests
         run: npm test
       - name: Bootstrap clean database through production migration entrypoint
         run: sh scripts/deploy-migrate.sh
-      - name: Verify Phase 3 platform tables
+      - name: Verify Phase 3 platform tables and document center
         run: |
-          TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$MYSQL_DATABASE' AND table_name IN ('ApiCredential','WebhookEndpoint','WebhookDelivery','SubscriptionEvent','ImpersonationGrant');")
-          test "$TABLES" = "5"
-          COLUMN_COUNT=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='$MYSQL_DATABASE' AND table_name='Plan' AND column_name='maxPublications';")
-          test "$COLUMN_COUNT" = "1"
+          TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$MYSQL_DATABASE' AND table_name IN ('NotificationLog','DocumentTemplate','ApiCredential','WebhookEndpoint','WebhookDelivery','SubscriptionEvent','ImpersonationGrant');")
+          test "$TABLES" = "7"
+          PLAN_COLUMN=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='$MYSQL_DATABASE' AND table_name='Plan' AND column_name='maxPublications';")
+          test "$PLAN_COLUMN" = "1"
+          DOC_CENTER_COLUMNS=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='$MYSQL_DATABASE' AND table_name='Document' AND column_name IN ('contactId','dealId','paymentId','ownerSettlementId','generatedFromTemplateId','source','contentSnapshot','notes');")
+          test "$DOC_CENTER_COLUMNS" = "8"
       - name: Verify Phase 4 integration tables and columns
         run: |
           TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$MYSQL_DATABASE' AND table_name IN ('ActivityEvent','CommunicationThread','CommunicationMessage','FinancialAccount','FinancialMovement');")
@@ -92,8 +95,12 @@ jobs:
           SUPERADMIN_PASSWORD: ""
         run: |
           sh scripts/deploy-migrate.sh
-          TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='onlymob_existing' AND table_name IN ('Contact','PropertyOwner','AuditLog','RoleProfile','TenantCounter','ApiCredential','WebhookEndpoint','ImpersonationGrant','ActivityEvent','CommunicationThread','CommunicationMessage','FinancialAccount','FinancialMovement');")
-          test "$TABLES" = "13"
+          TABLES=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='onlymob_existing' AND table_name IN ('Contact','PropertyOwner','AuditLog','RoleProfile','TenantCounter','NotificationLog','DocumentTemplate','ApiCredential','WebhookEndpoint','WebhookDelivery','SubscriptionEvent','ImpersonationGrant','ActivityEvent','CommunicationThread','CommunicationMessage','FinancialAccount','FinancialMovement');")
+          test "$TABLES" = "17"
+          PLAN_COLUMN=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='onlymob_existing' AND table_name='Plan' AND column_name='maxPublications';")
+          test "$PLAN_COLUMN" = "1"
+          DOC_CENTER_COLUMNS=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='onlymob_existing' AND table_name='Document' AND column_name IN ('contactId','dealId','paymentId','ownerSettlementId','generatedFromTemplateId','source','contentSnapshot','notes');")
+          test "$DOC_CENTER_COLUMNS" = "8"
           DOC_COLUMNS=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='onlymob_existing' AND table_name='Document' AND column_name IN ('workflowStatus','version','sentAt','viewedAt','signedAt','archivedAt','signatureProvider','signatureExternalId','workflowMetadata');")
           test "$DOC_COLUMNS" = "9"
           WEBHOOK_RETRY=$(MYSQL_PWD="$MYSQL_PASSWORD" mariadb -h 127.0.0.1 -u "$MYSQL_USER" onlymob_existing -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='onlymob_existing' AND table_name='WebhookDelivery' AND column_name='nextAttemptAt';")

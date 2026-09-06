@@ -14,6 +14,7 @@ export const WEBHOOK_EVENTS = [
   'reservation.created',
   'reservation.updated',
   'deal.created',
+  'deal.updated',
   'deal.won',
   'lease.created',
   'lease.updated',
@@ -24,6 +25,7 @@ export const WEBHOOK_EVENTS = [
   'document.created',
   'document.updated',
   'settlement.ready',
+  'settlement.updated',
   'communication.sent',
   'financial.movement.created',
 ] as const;
@@ -48,7 +50,7 @@ export async function authenticateApiRequest(request: Request, requiredScope: st
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   if (!token || token.length < 24) return null;
   const hash = sha256(token);
-  const rows = await platformPrisma.$queryRaw<Array<{ id: string; tenantId: string; tokenHash: string; scopes: string; isActive: number | boolean; expiresAt: Date | null }>>(Prisma.sql`
+  const rows = await platformPrisma.$queryRaw<Array<{ id: string; tenantId: string; tokenHash: string; scopes: string; isActive: number|boolean; expiresAt: Date|null }>>(Prisma.sql`
     SELECT id, tenantId, tokenHash, scopes, isActive, expiresAt FROM ApiCredential WHERE tokenHash = ${hash} LIMIT 1
   `);
   const row = rows[0];

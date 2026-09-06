@@ -375,17 +375,18 @@ model TenantDomain {
 }
 
 model Plan {
-  id            String   @id @default(uuid())
-  code          String   @unique @db.VarChar(60)
-  name          String   @db.VarChar(120)
-  description   String?  @db.Text
-  priceMonthly  Decimal  @default(0.00) @db.Decimal(12, 2)
-  priceYearly   Decimal  @default(0.00) @db.Decimal(12, 2)
-  maxProperties Int      @default(50)
-  maxGarages    Int      @default(10)
-  maxUsers      Int      @default(5)
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  id              String   @id @default(uuid())
+  code            String   @unique @db.VarChar(60)
+  name            String   @db.VarChar(120)
+  description     String?  @db.Text
+  priceMonthly    Decimal  @default(0.00) @db.Decimal(12, 2)
+  priceYearly     Decimal  @default(0.00) @db.Decimal(12, 2)
+  maxProperties   Int      @default(50)
+  maxGarages      Int      @default(10)
+  maxUsers        Int      @default(5)
+  maxPublications Int      @default(50)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
 
   subscriptions TenantSubscription[]
 }
@@ -414,7 +415,7 @@ model TenantFeatureOverride {
   tenantId   String
   featureKey String   @db.VarChar(80)
   enabled    Boolean
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -451,17 +452,17 @@ model SuperAdminUser {
 // PLANO INMOBILIARIA (TENANT SCOPED)
 // ==========================================
 model User {
-  id            String    @id @default(uuid())
+  id            String   @id @default(uuid())
   tenantId      String
   roleProfileId String?
-  email         String    @db.VarChar(120)
-  passwordHash  String    @db.VarChar(255)
-  name          String    @db.VarChar(120)
-  role          UserRole  @default(ADMIN)
-  isActive      Boolean   @default(true)
+  email         String   @db.VarChar(120)
+  passwordHash  String   @db.VarChar(255)
+  name          String   @db.VarChar(120)
+  role          UserRole @default(ADMIN)
+  isActive      Boolean  @default(true)
   lastLoginAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   roleProfile            RoleProfile?         @relation(fields: [roleProfileId], references: [id], onDelete: SetNull)
@@ -514,47 +515,47 @@ model RolePermission {
 }
 
 model Contact {
-  id                       String   @id @default(uuid())
-  tenantId                 String
-  firstName                String   @db.VarChar(80)
-  lastName                 String   @db.VarChar(80)
-  companyName              String?  @db.VarChar(160)
-  documentType             String?  @db.VarChar(20)
-  documentNumber           String?  @db.VarChar(40)
-  cuit                     String?  @db.VarChar(30)
-  email                    String?  @db.VarChar(120)
-  phone                    String?  @db.VarChar(50)
-  alternatePhone           String?  @db.VarChar(50)
-  address                  String?  @db.VarChar(255)
-  city                     String?  @db.VarChar(100)
-  province                 String?  @db.VarChar(100)
-  postalCode               String?  @db.VarChar(20)
-  bankAlias                String?  @db.VarChar(120)
-  bankCbu                  String?  @db.VarChar(40)
-  ownerPortalPasswordHash  String?  @db.VarChar(255)
-  ownerPortalEnabled       Boolean  @default(false)
-  ownerPortalLastLoginAt   DateTime?
-  notes                    String?  @db.Text
-  isActive                 Boolean  @default(true)
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
-  archivedAt               DateTime?
+  id                      String   @id @default(uuid())
+  tenantId                String
+  firstName               String   @db.VarChar(80)
+  lastName                String   @db.VarChar(80)
+  companyName             String?  @db.VarChar(160)
+  documentType            String?  @db.VarChar(20)
+  documentNumber          String?  @db.VarChar(40)
+  cuit                    String?  @db.VarChar(30)
+  email                   String?  @db.VarChar(120)
+  phone                   String?  @db.VarChar(50)
+  alternatePhone          String?  @db.VarChar(50)
+  address                 String?  @db.VarChar(255)
+  city                    String?  @db.VarChar(100)
+  province                String?  @db.VarChar(100)
+  postalCode              String?  @db.VarChar(20)
+  bankAlias               String?  @db.VarChar(120)
+  bankCbu                 String?  @db.VarChar(40)
+  ownerPortalPasswordHash String?  @db.VarChar(255)
+  ownerPortalEnabled      Boolean  @default(false)
+  ownerPortalLastLoginAt  DateTime?
+  notes                   String?  @db.Text
+  isActive                Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  archivedAt              DateTime?
 
-  tenant                    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  roles                     ContactRole[]
-  ownedProperties           PropertyOwner[]
-  leads                     Lead[]
-  demands                   Demand[]
-  tasks                     Task[]
-  calendarEvents            CalendarEvent[]
-  reservations              Reservation[]
-  deals                     Deal[]
-  providedExpenses          PropertyExpense[]    @relation("ExpenseProvider")
-  chargedOwnerExpenses      PropertyExpense[]    @relation("ExpenseOwner")
-  ownerSettlements          OwnerSettlement[]    @relation("OwnerSettlementContact")
-  guaranteedLeases          PropertyLease[]      @relation("LeaseGuarantor")
-  providerProfile           ProviderProfile?
-  providedMaintenance       MaintenanceRequest[] @relation("MaintenanceProvider")
+  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roles                ContactRole[]
+  ownedProperties      PropertyOwner[]
+  leads                Lead[]
+  demands              Demand[]
+  tasks                Task[]
+  calendarEvents       CalendarEvent[]
+  reservations         Reservation[]
+  deals                Deal[]
+  providedExpenses     PropertyExpense[]     @relation("ExpenseProvider")
+  chargedOwnerExpenses PropertyExpense[]     @relation("ExpenseOwner")
+  ownerSettlements     OwnerSettlement[]     @relation("OwnerSettlementContact")
+  guaranteedLeases     PropertyLease[]       @relation("LeaseGuarantor")
+  providerProfile      ProviderProfile?
+  providedMaintenance  MaintenanceRequest[]  @relation("MaintenanceProvider")
 
   @@index([tenantId, lastName, firstName])
   @@index([tenantId, email])
@@ -603,55 +604,55 @@ model PropertyRenter {
 }
 
 model Property {
-  id                    String                   @id @default(uuid())
-  tenantId              String
-  agentId               String?
-  code                  String                   @db.VarChar(50)
-  address               String                   @db.VarChar(255)
-  type                  PropertyType             @default(DEPARTAMENTO)
-  subtype               String?                  @db.VarChar(80)
-  operation             PropertyOperation        @default(RENT)
-  commercialStatus      PropertyCommercialStatus @default(AVAILABLE)
-  rooms                 Int?
-  bedrooms              Int?
-  bathrooms             Int?
-  garageCount           Int?
-  sqm                   Decimal?                 @db.Decimal(10, 2)
-  coveredSqm            Decimal?                 @db.Decimal(10, 2)
-  semiCoveredSqm        Decimal?                 @db.Decimal(10, 2)
-  landSqm               Decimal?                 @db.Decimal(10, 2)
-  baseRent              Decimal?                 @db.Decimal(12, 2)
-  rentPrice             Decimal?                 @db.Decimal(14, 2)
-  salePrice             Decimal?                 @db.Decimal(14, 2)
-  currency              String                   @default("ARS") @db.VarChar(10)
-  expenses              Decimal?                 @db.Decimal(12, 2)
-  expensesShare         Decimal?                 @db.Decimal(6, 2)
-  commissionPercent     Decimal?                 @db.Decimal(6, 2)
-  street                String?                  @db.VarChar(160)
-  streetNumber          String?                  @db.VarChar(30)
-  floor                 String?                  @db.VarChar(20)
-  unit                  String?                  @db.VarChar(20)
-  city                  String?                  @db.VarChar(100)
-  province              String?                  @db.VarChar(100)
-  country               String                   @default("Argentina") @db.VarChar(80)
-  postalCode            String?                  @db.VarChar(20)
-  latitude              Decimal?                 @db.Decimal(10, 7)
-  longitude             Decimal?                 @db.Decimal(10, 7)
-  ageYears              Int?
-  orientation           String?                  @db.VarChar(50)
-  amenities             Json?
-  publicDescription     String?                  @db.Text
-  internalDescription   String?                  @db.Text
-  coverImageUrl         String?                  @db.VarChar(500)
-  availableFrom         DateTime?                @db.Date
-  capturedAt            DateTime?
-  captureSource         String?                  @db.VarChar(100)
-  publishedAt           DateTime?
-  status                PropertyStatus           @default(DISPONIBLE)
-  notes                 String?                  @db.Text
-  createdAt             DateTime                 @default(now())
-  updatedAt             DateTime                 @updatedAt
-  archivedAt            DateTime?
+  id                  String                   @id @default(uuid())
+  tenantId            String
+  agentId             String?
+  code                String                   @db.VarChar(50)
+  address             String                   @db.VarChar(255)
+  type                PropertyType             @default(DEPARTAMENTO)
+  subtype             String?                  @db.VarChar(80)
+  operation           PropertyOperation        @default(RENT)
+  commercialStatus    PropertyCommercialStatus @default(AVAILABLE)
+  rooms               Int?
+  bedrooms            Int?
+  bathrooms           Int?
+  garageCount         Int?
+  sqm                 Decimal?                 @db.Decimal(10, 2)
+  coveredSqm          Decimal?                 @db.Decimal(10, 2)
+  semiCoveredSqm      Decimal?                 @db.Decimal(10, 2)
+  landSqm             Decimal?                 @db.Decimal(10, 2)
+  baseRent            Decimal?                 @db.Decimal(12, 2)
+  rentPrice           Decimal?                 @db.Decimal(14, 2)
+  salePrice           Decimal?                 @db.Decimal(14, 2)
+  currency            String                   @default("ARS") @db.VarChar(10)
+  expenses            Decimal?                 @db.Decimal(12, 2)
+  expensesShare       Decimal?                 @db.Decimal(6, 2)
+  commissionPercent   Decimal?                 @db.Decimal(6, 2)
+  street              String?                  @db.VarChar(160)
+  streetNumber        String?                  @db.VarChar(30)
+  floor               String?                  @db.VarChar(20)
+  unit                String?                  @db.VarChar(20)
+  city                String?                  @db.VarChar(100)
+  province            String?                  @db.VarChar(100)
+  country             String                   @default("Argentina") @db.VarChar(80)
+  postalCode          String?                  @db.VarChar(20)
+  latitude            Decimal?                 @db.Decimal(10, 7)
+  longitude           Decimal?                 @db.Decimal(10, 7)
+  ageYears            Int?
+  orientation         String?                  @db.VarChar(50)
+  amenities           Json?
+  publicDescription   String?                  @db.Text
+  internalDescription String?                  @db.Text
+  coverImageUrl       String?                  @db.VarChar(500)
+  availableFrom       DateTime?                @db.Date
+  capturedAt          DateTime?
+  captureSource       String?                  @db.VarChar(100)
+  publishedAt         DateTime?
+  status              PropertyStatus           @default(DISPONIBLE)
+  notes               String?                  @db.Text
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  archivedAt          DateTime?
 
   tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent                 User?                  @relation("PropertyAgent", fields: [agentId], references: [id], onDelete: SetNull)
@@ -820,13 +821,13 @@ model RentHistory {
   id              String    @id @default(uuid())
   propertyLeaseId String?
   garageLeaseId   String?
-  changeDate      DateTime  @db.Date
-  oldRent         Decimal   @db.Decimal(12, 2)
-  newRent         Decimal   @db.Decimal(12, 2)
-  percent         Decimal?  @db.Decimal(6, 2)
-  indexUsed       String?   @db.VarChar(50)
-  notes           String?   @db.VarChar(255)
-  createdAt       DateTime  @default(now())
+  changeDate      DateTime   @db.Date
+  oldRent         Decimal    @db.Decimal(12, 2)
+  newRent         Decimal    @db.Decimal(12, 2)
+  percent         Decimal?   @db.Decimal(6, 2)
+  indexUsed       String?    @db.VarChar(50)
+  notes           String?    @db.VarChar(255)
+  createdAt       DateTime   @default(now())
 
   propertyLease PropertyLease? @relation(fields: [propertyLeaseId], references: [id], onDelete: Cascade)
   garageLease   GarageLease?   @relation(fields: [garageLeaseId], references: [id], onDelete: Cascade)
@@ -885,19 +886,36 @@ model Payment {
 }
 
 model Document {
-  id                   String   @id @default(uuid())
-  tenantId             String
-  propertyId           String?
-  renterId             String?
-  propertyLeaseId      String?
-  maintenanceRequestId String?
-  inspectionId         String?
-  category             String   @db.VarChar(60)
-  fileName             String   @db.VarChar(255)
-  fileUrl              String   @db.VarChar(500)
-  fileSize             Int?
-  mimeType             String?  @db.VarChar(100)
-  uploadedAt           DateTime @default(now())
+  id                      String   @id @default(uuid())
+  tenantId                String
+  propertyId              String?
+  renterId                String?
+  propertyLeaseId         String?
+  maintenanceRequestId    String?
+  inspectionId            String?
+  contactId               String?
+  dealId                  String?
+  paymentId               String?
+  ownerSettlementId       String?
+  generatedFromTemplateId String?
+  source                  String   @default("UPLOAD") @db.VarChar(40)
+  contentSnapshot         String?  @db.LongText
+  notes                   String?  @db.Text
+  category                String   @db.VarChar(60)
+  fileName                String   @db.VarChar(255)
+  fileUrl                 String   @db.VarChar(500)
+  fileSize                Int?
+  mimeType                String?  @db.VarChar(100)
+  uploadedAt              DateTime @default(now())
+  workflowStatus          String   @default("ARCHIVED") @db.VarChar(20)
+  version                 Int      @default(1)
+  sentAt                  DateTime?
+  viewedAt                DateTime?
+  signedAt                DateTime?
+  archivedAt              DateTime?
+  signatureProvider       String?  @db.VarChar(80)
+  signatureExternalId     String?  @db.VarChar(191)
+  workflowMetadata        String?  @db.LongText
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   property           Property?           @relation(fields: [propertyId], references: [id], onDelete: SetNull)
@@ -912,6 +930,12 @@ model Document {
   @@index([propertyLeaseId])
   @@index([maintenanceRequestId])
   @@index([inspectionId])
+  @@index([contactId], map: "Document_contactId_idx")
+  @@index([dealId], map: "Document_dealId_idx")
+  @@index([paymentId], map: "Document_paymentId_idx")
+  @@index([ownerSettlementId], map: "Document_ownerSettlementId_idx")
+  @@index([generatedFromTemplateId], map: "Document_generatedFromTemplateId_idx")
+  @@index([tenantId, workflowStatus, uploadedAt], map: "Document_tenant_workflow_idx")
 }
 
 model TenantSetting {
@@ -1292,20 +1316,20 @@ model OwnerSettlementLine {
 }
 
 model RecurringCharge {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   tenantId        String
   propertyLeaseId String
   type            DebtType
-  description     String   @db.VarChar(255)
-  amount          Decimal? @db.Decimal(12, 2)
-  percentage      Decimal? @db.Decimal(6, 2)
-  frequencyMonths Int      @default(1)
-  dueDay          Int      @default(10)
-  startsAt        DateTime @db.Date
+  description     String    @db.VarChar(255)
+  amount          Decimal?  @db.Decimal(12, 2)
+  percentage      Decimal?  @db.Decimal(6, 2)
+  frequencyMonths Int       @default(1)
+  dueDay          Int       @default(10)
+  startsAt        DateTime  @db.Date
   endsAt          DateTime? @db.Date
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lease  PropertyLease @relation(fields: [propertyLeaseId], references: [id], onDelete: Cascade)
@@ -1336,31 +1360,31 @@ model ProviderProfile {
 }
 
 model MaintenanceRequest {
-  id                 String                @id @default(uuid())
-  tenantId           String
-  propertyId         String
-  propertyLeaseId    String?
-  renterId           String?
-  providerContactId  String?
-  assignedUserId     String?
-  category           String                @db.VarChar(80)
-  priority           MaintenancePriority   @default(NORMAL)
-  status             MaintenanceStatus     @default(OPEN)
-  title              String                @db.VarChar(180)
-  description        String                @db.Text
-  reportedBy         String?               @db.VarChar(120)
-  quotedAmount       Decimal?              @db.Decimal(14, 2)
-  approvedAmount     Decimal?              @db.Decimal(14, 2)
-  actualCost         Decimal?              @db.Decimal(14, 2)
-  costBearer         MaintenanceCostBearer @default(UNASSIGNED)
-  ownerApprovedAt    DateTime?
-  scheduledAt        DateTime?
-  promisedAt         DateTime?
-  startedAt          DateTime?
-  resolvedAt         DateTime?
-  resolutionNotes    String?               @db.Text
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  id                String                @id @default(uuid())
+  tenantId          String
+  propertyId        String
+  propertyLeaseId   String?
+  renterId          String?
+  providerContactId String?
+  assignedUserId    String?
+  category          String                @db.VarChar(80)
+  priority          MaintenancePriority   @default(NORMAL)
+  status            MaintenanceStatus     @default(OPEN)
+  title             String                @db.VarChar(180)
+  description       String                @db.Text
+  reportedBy        String?               @db.VarChar(120)
+  quotedAmount      Decimal?              @db.Decimal(14, 2)
+  approvedAmount    Decimal?              @db.Decimal(14, 2)
+  actualCost        Decimal?              @db.Decimal(14, 2)
+  costBearer        MaintenanceCostBearer @default(UNASSIGNED)
+  ownerApprovedAt   DateTime?
+  scheduledAt       DateTime?
+  promisedAt        DateTime?
+  startedAt         DateTime?
+  resolvedAt        DateTime?
+  resolutionNotes   String?               @db.Text
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
   tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   property      Property        @relation(fields: [propertyId], references: [id], onDelete: Restrict)
@@ -1449,4 +1473,239 @@ model InspectionFinding {
   @@index([tenantId, severity, resolved])
   @@index([inspectionId])
   @@index([maintenanceRequestId])
+}
+
+// ==========================================
+// FASE 3.5+ — NOTIFICACIONES, DOCUMENTOS, API Y SAAS
+// ==========================================
+model NotificationLog {
+  id                 String   @id
+  tenantId           String
+  eventKey           String   @db.VarChar(100)
+  channel            String   @default("INTERNAL") @db.VarChar(20)
+  audienceType       String   @default("TENANT") @db.VarChar(20)
+  recipientRefId     String?  @db.VarChar(191)
+  recipientAddress   String?  @db.VarChar(190)
+  title              String   @db.VarChar(180)
+  body               String   @db.Text
+  metadata           String?  @db.LongText
+  status             String   @default("SENT") @db.VarChar(20)
+  dedupeKey          String   @db.VarChar(191)
+  scheduledFor       DateTime?
+  sentAt             DateTime?
+  readAt             DateTime?
+  failedAt           DateTime?
+  failureMessage     String?  @db.VarChar(500)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([tenantId, channel, dedupeKey], map: "NotificationLog_tenant_channel_dedupe_key")
+  @@index([tenantId, status, createdAt], map: "NotificationLog_tenant_status_created_idx")
+  @@index([tenantId, recipientRefId, status, createdAt], map: "NotificationLog_recipient_status_created_idx")
+  @@index([tenantId, eventKey, createdAt], map: "NotificationLog_event_created_idx")
+}
+
+model DocumentTemplate {
+  id          String   @id
+  tenantId    String
+  name        String   @db.VarChar(160)
+  category    String   @db.VarChar(60)
+  description String?  @db.Text
+  body        String   @db.LongText
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, name], map: "DocumentTemplate_tenant_name_key")
+  @@index([tenantId, category, isActive], map: "DocumentTemplate_tenant_category_idx")
+}
+
+model ApiCredential {
+  id          String   @id
+  tenantId    String
+  name        String   @db.VarChar(120)
+  tokenPrefix String   @db.VarChar(24)
+  tokenHash   String   @unique @db.VarChar(64)
+  scopes      String   @db.LongText
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, isActive], map: "ApiCredential_tenant_active_idx")
+}
+
+model WebhookEndpoint {
+  id        String   @id
+  tenantId  String
+  name      String   @db.VarChar(120)
+  url       String   @db.VarChar(500)
+  events    String   @db.LongText
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, isActive], map: "WebhookEndpoint_tenant_active_idx")
+}
+
+model WebhookDelivery {
+  id            String   @id
+  tenantId      String
+  endpointId    String
+  eventKey      String   @db.VarChar(100)
+  payload       String   @db.LongText
+  status        String   @default("PENDING") @db.VarChar(20)
+  httpStatus    Int?
+  attempts      Int      @default(0)
+  lastError     String?  @db.VarChar(500)
+  deliveredAt   DateTime?
+  nextAttemptAt DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId, eventKey, createdAt], map: "WebhookDelivery_tenant_event_idx")
+  @@index([endpointId, status, createdAt], map: "WebhookDelivery_endpoint_status_idx")
+  @@index([status, nextAttemptAt, createdAt], map: "WebhookDelivery_retry_idx")
+}
+
+model SubscriptionEvent {
+  id                String   @id
+  tenantId          String
+  subscriptionId    String?
+  actorSuperAdminId String?
+  eventType         String   @db.VarChar(80)
+  fromStatus        String?  @db.VarChar(30)
+  toStatus          String?  @db.VarChar(30)
+  fromPlanCode      String?  @db.VarChar(60)
+  toPlanCode        String?  @db.VarChar(60)
+  metadata          String?  @db.LongText
+  createdAt         DateTime @default(now())
+
+  @@index([tenantId, createdAt], map: "SubscriptionEvent_tenant_created_idx")
+}
+
+model ImpersonationGrant {
+  id           String   @id
+  tenantId     String
+  userId       String
+  superAdminId String
+  tokenHash    String   @unique @db.VarChar(64)
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, expiresAt], map: "ImpersonationGrant_tenant_exp_idx")
+}
+
+// ==========================================
+// FASE 4 — INTEGRACIÓN 360
+// ==========================================
+model ActivityEvent {
+  id              String   @id
+  tenantId        String
+  eventKey        String   @db.VarChar(100)
+  title           String   @db.VarChar(180)
+  description     String?  @db.Text
+  entityType      String   @db.VarChar(80)
+  entityId        String?  @db.VarChar(191)
+  propertyId      String?  @db.VarChar(191)
+  contactId       String?  @db.VarChar(191)
+  renterId        String?  @db.VarChar(191)
+  actorUserId     String?  @db.VarChar(191)
+  metadata        String?  @db.LongText
+  webhookQueuedAt DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([tenantId, createdAt], map: "ActivityEvent_tenant_created_idx")
+  @@index([tenantId, propertyId, createdAt], map: "ActivityEvent_property_created_idx")
+  @@index([tenantId, contactId, createdAt], map: "ActivityEvent_contact_created_idx")
+  @@index([tenantId, renterId, createdAt], map: "ActivityEvent_renter_created_idx")
+  @@index([tenantId, entityType, entityId, createdAt], map: "ActivityEvent_entity_idx")
+}
+
+model CommunicationThread {
+  id            String   @id
+  tenantId      String
+  propertyId    String?  @db.VarChar(191)
+  contactId     String?  @db.VarChar(191)
+  renterId      String?  @db.VarChar(191)
+  subject       String   @db.VarChar(180)
+  status        String   @default("OPEN") @db.VarChar(20)
+  lastMessageAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId, updatedAt], map: "CommunicationThread_tenant_updated_idx")
+  @@index([tenantId, propertyId, updatedAt], map: "CommunicationThread_property_idx")
+  @@index([tenantId, contactId, updatedAt], map: "CommunicationThread_contact_idx")
+  @@index([tenantId, renterId, updatedAt], map: "CommunicationThread_renter_idx")
+}
+
+model CommunicationMessage {
+  id               String   @id
+  tenantId         String
+  threadId         String
+  channel          String   @default("INTERNAL") @db.VarChar(20)
+  direction        String   @default("OUTBOUND") @db.VarChar(20)
+  senderUserId     String?  @db.VarChar(191)
+  audienceType     String   @default("TENANT") @db.VarChar(20)
+  recipientRefId   String?  @db.VarChar(191)
+  recipientAddress String?  @db.VarChar(255)
+  body             String   @db.Text
+  status           String   @default("QUEUED") @db.VarChar(20)
+  externalId       String?  @db.VarChar(191)
+  failureMessage   String?  @db.VarChar(500)
+  metadata         String?  @db.LongText
+  sentAt           DateTime?
+  deliveredAt      DateTime?
+  readAt           DateTime?
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId, createdAt], map: "CommunicationMessage_tenant_created_idx")
+  @@index([threadId, createdAt], map: "CommunicationMessage_thread_created_idx")
+  @@index([status, channel, createdAt], map: "CommunicationMessage_queue_idx")
+  @@index([tenantId, audienceType, recipientRefId, createdAt], map: "CommunicationMessage_recipient_idx")
+}
+
+model FinancialAccount {
+  id        String   @id
+  tenantId  String
+  name      String   @db.VarChar(120)
+  type      String   @default("BANK") @db.VarChar(30)
+  currency  String   @default("ARS") @db.VarChar(10)
+  bankName  String?  @db.VarChar(120)
+  alias     String?  @db.VarChar(120)
+  cbu       String?  @db.VarChar(40)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, isActive], map: "FinancialAccount_tenant_active_idx")
+}
+
+model FinancialMovement {
+  id                   String   @id
+  tenantId             String
+  accountId            String
+  type                 String   @db.VarChar(30)
+  amount               Decimal  @db.Decimal(14, 2)
+  currency             String   @default("ARS") @db.VarChar(10)
+  concept              String   @db.VarChar(180)
+  propertyId           String?  @db.VarChar(191)
+  contactId            String?  @db.VarChar(191)
+  renterId             String?  @db.VarChar(191)
+  debtId               String?  @db.VarChar(191)
+  paymentId            String?  @db.VarChar(191)
+  propertyExpenseId    String?  @db.VarChar(191)
+  ownerSettlementId    String?  @db.VarChar(191)
+  reference            String?  @db.VarChar(160)
+  reconciliationStatus String   @default("PENDING") @db.VarChar(20)
+  notes                String?  @db.Text
+  occurredAt           DateTime @default(now())
+  createdAt            DateTime @default(now())
+
+  @@unique([tenantId, paymentId], map: "FinancialMovement_payment_key")
+  @@index([tenantId, occurredAt], map: "FinancialMovement_tenant_date_idx")
+  @@index([accountId, occurredAt], map: "FinancialMovement_account_date_idx")
+  @@index([tenantId, propertyId, occurredAt], map: "FinancialMovement_property_idx")
+  @@index([tenantId, reconciliationStatus, occurredAt], map: "FinancialMovement_reconciliation_idx")
 }

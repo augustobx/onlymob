@@ -1,7 +1,7 @@
 'use server';
 
 import { Prisma } from '@prisma/client';
-import { requireTenantAdmin } from '@/lib/tenant-guard';
+import { requirePermission } from '@/lib/permissions';
 import { platformPrisma } from '@/lib/prisma-core';
 
 type ScalarRow = {
@@ -89,7 +89,7 @@ function number(value: unknown) {
 }
 
 export async function getAnalyticsAction(days = 90) {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('analytics', 'read');
   const safeDays = Math.max(30, Math.min(Number(days) || 90, 365));
   const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000);
   const monthStart = new Date();
