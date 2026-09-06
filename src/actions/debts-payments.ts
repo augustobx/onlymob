@@ -141,6 +141,7 @@ export async function recordPaymentAction(data: {
   });
 
   revalidatePath('/cobranzas');
+  revalidatePath('/rapidos/alquileres');
   revalidatePath('/finanzas');
   revalidatePath('/dashboard');
   return { success: true, paymentId: result.payment.id, receiptNumber: result.receiptNumber };
