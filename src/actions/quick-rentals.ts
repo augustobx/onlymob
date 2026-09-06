@@ -107,7 +107,7 @@ export async function getQuickRentalsStatusAction() {
         id: true,
         currentRent: true,
         endDate: true,
-        property: { select: { code: true, address: true } },
+        property: { select: { id: true, code: true, address: true } },
         renter: { select: { firstName: true, lastName: true, dni: true } },
         debts: debtSelect,
       },
@@ -148,6 +148,7 @@ export async function getQuickRentalsStatusAction() {
       monthlyRent: Number(lease.currentRent),
       endDate: lease.endDate.toISOString(),
       contractHref: `/contratos/${lease.id}`,
+      propertyHref: `/propiedades/${lease.property.id}`,
       ...debtStatus,
     };
   });
@@ -166,6 +167,7 @@ export async function getQuickRentalsStatusAction() {
       monthlyRent: Number(lease.totalRent),
       endDate: lease.endDate.toISOString(),
       contractHref: '/contratos',
+      propertyHref: null,
       ...debtStatus,
     };
   });
