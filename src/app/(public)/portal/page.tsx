@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation';
+import { Building2, LogOut } from 'lucide-react';
 import { getRenterSession } from '@/lib/auth';
 import { logoutRenterAction } from '@/actions/auth-actions';
 import { getRenterPortalDataAction } from '@/actions/renter-portal';
 import { getRenterPortalCommunicationsAction } from '@/actions/communications';
 import { RenterPortalClient } from './portal-client';
-import { Home, LogOut } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,24 +18,38 @@ export default async function RenterDashboardPage() {
   ]);
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
-      <header className="portal-topbar sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="portal-brandmark"><Home className="w-5 h-5" /></div>
-            <div>
-              <h1 className="font-bold text-sm leading-tight">{data.renter.tenant.name}</h1>
-              <p className="text-[11px] opacity-70">Portal Inquilino</p>
+    <div className="min-h-screen">
+      <header className="pwa-topbar">
+        <div className="pwa-shell pwa-topbar__inner">
+          <div className="pwa-brand">
+            <div className="pwa-brand__mark">
+              {data.renter.tenant.logoUrl ? (
+                <img src={data.renter.tenant.logoUrl} alt="" />
+              ) : (
+                <Building2 className="h-5 w-5" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="pwa-brand__name">{data.renter.tenant.name}</p>
+              <p className="pwa-brand__caption">Mi alquiler · OnlyMob</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden sm:inline text-xs font-semibold">{session.name}</span>
-            <form action={logoutRenterAction}><button type="submit" title="Cerrar sesión" className="portal-icon-button"><LogOut className="w-4 h-4" /></button></form>
+
+          <div className="flex items-center gap-2">
+            <div className="hidden text-right sm:block">
+              <p className="text-[11px] font-bold text-slate-700">{session.name}</p>
+              <p className="text-[9px] text-slate-400">Inquilino</p>
+            </div>
+            <form action={logoutRenterAction}>
+              <button type="submit" title="Cerrar sesión" className="pwa-logout" aria-label="Cerrar sesión">
+                <LogOut className="h-4 w-4" />
+              </button>
+            </form>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6">
+      <main className="pwa-shell pwa-main">
         <RenterPortalClient data={{ ...(data as any), communications }} />
       </main>
     </div>

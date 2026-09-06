@@ -1,21 +1,19 @@
 {
-  "name": "OnlyMob Portal Inquilino",
-  "short_name": "InquilinoApp",
-  "description": "Consultá tus contratos de alquiler, cuotas vigentes y recibos de pago",
+  "name": "OnlyMob · Portal de Inquilinos",
+  "short_name": "OnlyMob",
+  "description": "Tu alquiler, pagos, documentos, mensajes y mantenimiento en un solo lugar.",
   "start_url": "/portal",
+  "scope": "/portal",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "background_color": "#f5f7fb",
+  "theme_color": "#171b2c",
   "icons": [
     {
-      "src": "/globe_192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/globe_512.png",
-      "sizes": "512x512",
-      "type": "image/png"
+      "src": "/onlymob-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }
