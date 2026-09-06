@@ -47,9 +47,9 @@ export async function getGaragesAction() {
     name: garage.name,
     address: garage.address,
     totalSpaces: garage.spaces.length,
-    occupied: garage.spaces.filter((space) => space.status === 'OCCUPIED').length,
-    free: garage.spaces.filter((space) => space.status === 'FREE').length,
-    maintenance: garage.spaces.filter((space) => space.status === 'MAINTENANCE').length,
+    occupied: garage.spaces.filter((space) => space.leaseSpaces.length > 0 || space.status === 'OCCUPIED').length,
+    free: garage.spaces.filter((space) => space.leaseSpaces.length === 0 && space.status === 'FREE').length,
+    maintenance: garage.spaces.filter((space) => space.leaseSpaces.length === 0 && space.status === 'MAINTENANCE').length,
     orphaned: garage.spaces.filter((space) => space.status === 'OCCUPIED' && space.leaseSpaces.length === 0).length,
     spaces: garage.spaces.map((space) => {
       const activeLeaseSpace = space.leaseSpaces[0];
@@ -57,7 +57,7 @@ export async function getGaragesAction() {
       return {
         id: space.id,
         spaceNumber: space.spaceNumber,
-        status: space.status,
+        status: lease ? 'OCCUPIED' as const : space.status,
         renterName: lease ? `${lease.renter.firstName} ${lease.renter.lastName}` : null,
         leaseId: lease?.id || null,
         lease: lease ? {
