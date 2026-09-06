@@ -3,21 +3,99 @@
 import { platformPrisma } from '@/lib/prisma-core';
 import { requirePermission } from '@/lib/permissions';
 
-type OpenDebt = {
+type LeaseDebt = {
+  id: string;
+  description: string;
   amount: unknown;
   paidAmount: unknown;
   dueDate: Date;
   status: string;
+  payments: Array<{
+    id: string;
+    amount: unknown;
+    paidAt: Date;
+    method: string;
+    receiptNumber: string | null;
+  }>;
 };
 
-function debtBalance(debt: OpenDebt) {
+function debtBalance(debt: Pick<LeaseDebt, 'amount' | 'paidAmount'>) {
   return Math.max(0, Number(debt.amount || 0) - Number(debt.paidAmount || 0));
+}
+
+function normalizeLeaseDebts(debts: LeaseDebt[], today: Date) {
+  const openDebts = debts
+    .filter((debt) => ['PENDING', 'PARTIAL', 'OVERDUE'].includes(debt.status) && debtBalance(debt) > 0.009)
+    .map((debt) => {
+      const overdue = debt.status === 'OVERDUE' || debt.dueDate < today;
+      return {
+        id: debt.id,
+        description: debt.description,
+        amount: Number(debt.amount),
+        paidAmount: Number(debt.paidAmount),
+        remaining: debtBalance(debt),
+        dueDate: debt.dueDate.toISOString(),
+        status: overdue ? 'OVERDUE' : debt.status,
+        overdue,
+      };
+    })
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+  const overdueDebts = openDebts.filter((debt) => debt.overdue);
+  const openBalance = openDebts.reduce((sum, debt) => sum + debt.remaining, 0);
+  const overdueBalance = overdueDebts.reduce((sum, debt) => sum + debt.remaining, 0);
+  const oldestOverdueDate = overdueDebts[0]?.dueDate || null;
+
+  const recentPayments = debts
+    .flatMap((debt) => debt.payments.map((payment) => ({
+      id: payment.id,
+      amount: Number(payment.amount),
+      paidAt: payment.paidAt.toISOString(),
+      method: payment.method,
+      receiptNumber: payment.receiptNumber,
+      debtDescription: debt.description,
+    })))
+    .sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime())
+    .slice(0, 5);
+
+  return {
+    overdue: overdueDebts.length > 0,
+    openBalance,
+    overdueBalance,
+    oldestOverdueDate,
+    debts: openDebts,
+    recentPayments,
+  };
 }
 
 export async function getQuickRentalsStatusAction() {
   const { tenant } = await requirePermission('leases', 'read');
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  const debtSelect = {
+    where: { type: 'ALQUILER' as const },
+    select: {
+      id: true,
+      description: true,
+      amount: true,
+      paidAmount: true,
+      dueDate: true,
+      status: true,
+      payments: {
+        select: {
+          id: true,
+          amount: true,
+          paidAt: true,
+          method: true,
+          receiptNumber: true,
+        },
+        orderBy: { paidAt: 'desc' as const },
+        take: 5,
+      },
+    },
+    orderBy: { dueDate: 'desc' as const },
+  };
 
   const [propertyLeases, garageLeases] = await Promise.all([
     platformPrisma.propertyLease.findMany({
@@ -31,13 +109,7 @@ export async function getQuickRentalsStatusAction() {
         endDate: true,
         property: { select: { code: true, address: true } },
         renter: { select: { firstName: true, lastName: true, dni: true } },
-        debts: {
-          where: {
-            type: 'ALQUILER',
-            status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-          },
-          select: { amount: true, paidAmount: true, dueDate: true, status: true },
-        },
+        debts: debtSelect,
       },
       orderBy: { property: { code: 'asc' } },
     }),
@@ -58,31 +130,14 @@ export async function getQuickRentalsStatusAction() {
             },
           },
         },
-        debts: {
-          where: {
-            type: 'ALQUILER',
-            status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-          },
-          select: { amount: true, paidAmount: true, dueDate: true, status: true },
-        },
+        debts: debtSelect,
       },
       orderBy: { createdAt: 'desc' },
     }),
   ]);
 
-  function statusFromDebts(debts: OpenDebt[]) {
-    const overdueDebts = debts.filter((debt) => debtBalance(debt) > 0.009 && (debt.status === 'OVERDUE' || debt.dueDate < today));
-    const openBalance = debts.reduce((sum, debt) => sum + debtBalance(debt), 0);
-    const overdueBalance = overdueDebts.reduce((sum, debt) => sum + debtBalance(debt), 0);
-    const oldestOverdueDate = overdueDebts.length
-      ? overdueDebts.reduce((oldest, debt) => debt.dueDate < oldest ? debt.dueDate : oldest, overdueDebts[0].dueDate)
-      : null;
-
-    return { overdue: overdueDebts.length > 0, openBalance, overdueBalance, oldestOverdueDate };
-  }
-
   const properties = propertyLeases.map((lease) => {
-    const debtStatus = statusFromDebts(lease.debts as OpenDebt[]);
+    const debtStatus = normalizeLeaseDebts(lease.debts as LeaseDebt[], today);
     return {
       id: lease.id,
       type: 'PROPERTY' as const,
@@ -94,12 +149,11 @@ export async function getQuickRentalsStatusAction() {
       endDate: lease.endDate.toISOString(),
       contractHref: `/contratos/${lease.id}`,
       ...debtStatus,
-      oldestOverdueDate: debtStatus.oldestOverdueDate?.toISOString() || null,
     };
   });
 
   const garages = garageLeases.map((lease) => {
-    const debtStatus = statusFromDebts(lease.debts as OpenDebt[]);
+    const debtStatus = normalizeLeaseDebts(lease.debts as LeaseDebt[], today);
     const address = lease.spaces[0]?.space.garage.address || 'Cochera';
     const spaces = lease.spaces.map((item) => `#${item.space.spaceNumber}`).join(', ');
     return {
@@ -113,7 +167,6 @@ export async function getQuickRentalsStatusAction() {
       endDate: lease.endDate.toISOString(),
       contractHref: '/contratos',
       ...debtStatus,
-      oldestOverdueDate: debtStatus.oldestOverdueDate?.toISOString() || null,
     };
   });
 
