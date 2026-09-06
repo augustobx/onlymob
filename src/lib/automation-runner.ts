@@ -3,6 +3,8 @@ import 'server-only';
 import { platformPrisma } from '@/lib/prisma-core';
 import { createNotification } from '@/lib/notifications';
 import { isTenantFeatureEnabled } from '@/lib/saas';
+import { auditTenantAction } from '@/lib/tenant-guard';
+import { applyScheduledRentAdjustments, getAutomaticAdjustmentSettings } from '@/lib/rent-adjustment-engine';
 
 function addDays(date: Date, days: number) { return new Date(date.getTime() + days * 24 * 60 * 60 * 1000); }
 function addHours(date: Date, hours: number) { return new Date(date.getTime() + hours * 60 * 60 * 1000); }
@@ -21,8 +23,8 @@ export async function runAutomationSweep(input: { tenantId?: string | null } = {
 
   const totals: Record<string, number> = {
     tenants: 0, skippedDisabled: 0, notifications: 0, leadNew: 0, leadNoResponse: 0, visitReminder: 0,
-    leaseExpiring: 0, adjustmentUpcoming: 0, quotaGenerated: 0, debtDueSoon: 0, debtOverdue: 0,
-    paymentRegistered: 0, maintenanceUpdated: 0, settlementReady: 0,
+    leaseExpiring: 0, adjustmentUpcoming: 0, adjustmentApplied: 0, adjustmentSkipped: 0,
+    quotaGenerated: 0, debtDueSoon: 0, debtOverdue: 0, paymentRegistered: 0, maintenanceUpdated: 0, settlementReady: 0,
   };
 
   async function emit(category: keyof typeof totals, notification: Parameters<typeof createNotification>[0]) {
@@ -37,6 +39,56 @@ export async function runAutomationSweep(input: { tenantId?: string | null } = {
       continue;
     }
     totals.tenants += 1;
+
+    const autoSettings = await getAutomaticAdjustmentSettings(tenant.id);
+    if (autoSettings.globalEnabled && autoSettings.enabledLeaseIds.size > 0) {
+      const automaticLeases = await platformPrisma.propertyLease.findMany({
+        where: {
+          tenantId: tenant.id,
+          id: { in: [...autoSettings.enabledLeaseIds] },
+          status: { in: ['CURRENT', 'EXPIRING'] },
+        },
+        select: { id: true },
+      });
+
+      if (automaticLeases.length) {
+        const automaticResult = await applyScheduledRentAdjustments({
+          tenantId: tenant.id,
+          leaseIds: automaticLeases.map((lease) => lease.id),
+          asOf: now,
+        });
+        totals.adjustmentApplied += automaticResult.applied.length;
+        totals.adjustmentSkipped += automaticResult.skipped.length;
+
+        for (const row of automaticResult.applied) {
+          await auditTenantAction({
+            tenantId: tenant.id,
+            action: 'LEASE_INCREASE_APPLIED',
+            entityType: 'PropertyLease',
+            entityId: row.leaseId,
+            metadata: {
+              propertyId: row.propertyId,
+              adjustmentMethod: row.adjustmentMethod,
+              oldRent: row.oldRent,
+              newRent: row.newRent,
+              percent: row.percent,
+              indexUsed: row.indexUsed,
+              nextAdjustmentDate: row.nextAdjustmentDate,
+              source: 'automation',
+            },
+          });
+          const notification = await createNotification({
+            tenantId: tenant.id,
+            eventKey: 'ADJUSTMENT_APPLIED',
+            title: 'Aumento aplicado automáticamente',
+            body: `${row.propertyCode} · ${row.renterName} · ${money(row.oldRent)} → ${money(row.newRent)} (${Number(row.percent || 0).toFixed(2)}%).`,
+            dedupeKey: `adjustment-applied:${row.leaseId}:${dateKey(new Date(row.dueDate))}`,
+            metadata: { leaseId: row.leaseId, propertyId: row.propertyId, oldRent: row.oldRent, newRent: row.newRent, percent: row.percent },
+          });
+          totals.notifications += notification.created;
+        }
+      }
+    }
 
     const [newLeads, staleLeads, visits, expiringLeases, upcomingAdjustments, recentDebts, dueSoonDebts, overdueDebts, recentPayments, maintenanceEvents, readySettlements] = await Promise.all([
       platformPrisma.lead.findMany({ where:{tenantId:tenant.id,createdAt:{gte:recentSince}}, include:{contact:{select:{firstName:true,lastName:true}}} }),
