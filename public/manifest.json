@@ -3,7 +3,7 @@
   "short_name": "OnlyMob",
   "description": "Tu alquiler, pagos, documentos, mensajes y mantenimiento en un solo lugar.",
   "start_url": "/portal",
-  "scope": "/portal/",
+  "scope": "/portal",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#f5f7fb",
