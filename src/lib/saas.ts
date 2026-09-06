@@ -2,6 +2,7 @@ import 'server-only';
 
 import { Prisma } from '@prisma/client';
 import { platformPrisma } from '@/lib/prisma-core';
+import { SAAS_FEATURE_KEYS, type SaasFeatureKey } from '@/lib/feature-catalog';
 
 export type PlanResource = 'properties' | 'garages' | 'users' | 'publications';
 
@@ -81,4 +82,16 @@ export async function isTenantFeatureEnabled(tenantId: string, featureKey: strin
     where: { tenantId_featureKey: { tenantId, featureKey } },
   });
   return override ? override.enabled : defaultValue;
+}
+
+export async function getTenantFeatureFlags(
+  tenantId: string,
+  keys: readonly SaasFeatureKey[] = SAAS_FEATURE_KEYS,
+): Promise<Record<SaasFeatureKey, boolean>> {
+  const overrides = await platformPrisma.tenantFeatureOverride.findMany({
+    where: { tenantId, featureKey: { in: [...keys] } },
+    select: { featureKey: true, enabled: true },
+  });
+  const overrideMap = new Map(overrides.map((item) => [item.featureKey, item.enabled]));
+  return Object.fromEntries(keys.map((key) => [key, overrideMap.get(key) ?? true])) as Record<SaasFeatureKey, boolean>;
 }
