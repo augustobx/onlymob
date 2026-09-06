@@ -4,10 +4,12 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { getRenterSession } from '@/lib/auth';
 import { platformPrisma } from '@/lib/prisma-core';
+import { isTenantFeatureEnabled } from '@/lib/saas';
 
 async function requireRenterPortalSession() {
   const session = await getRenterSession();
   if (!session) throw new Error('UNAUTHORIZED');
+  if (!(await isTenantFeatureEnabled(session.tenantId, 'renter_portal'))) throw new Error('FEATURE_DISABLED');
   return session;
 }
 
