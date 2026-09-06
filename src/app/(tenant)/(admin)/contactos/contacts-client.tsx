@@ -3,249 +3,39 @@
 import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
 import { archiveContactAction, saveContactAction } from '@/actions/contacts';
-import { Building2, ExternalLink, Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react';
+import { Building2, ExternalLink, Pencil, Plus, Trash2, UserRound } from 'lucide-react';
+import { Drawer, EmptyState, FormSection, WorkspaceToolbar } from '@/components/ui/workspace';
+import { WorkspaceSearch } from '@/components/ui/workspace-search';
 
 const ROLE_OPTIONS = [
-  ['OWNER', 'Propietario'],
-  ['PROSPECT', 'Prospecto'],
-  ['BUYER', 'Comprador'],
-  ['RENTAL_PROSPECT', 'Interesado alquiler'],
-  ['RENTER', 'Inquilino'],
-  ['GUARANTOR', 'Garante'],
-  ['PROVIDER', 'Proveedor'],
-  ['GENERAL', 'General'],
+  ['OWNER', 'Propietario'], ['PROSPECT', 'Prospecto'], ['BUYER', 'Comprador'], ['RENTAL_PROSPECT', 'Interesado alquiler'],
+  ['RENTER', 'Inquilino'], ['GUARANTOR', 'Garante'], ['PROVIDER', 'Proveedor'], ['GENERAL', 'General'],
 ] as const;
 
-type ContactRow = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  companyName: string | null;
-  documentType: string | null;
-  documentNumber: string | null;
-  cuit: string | null;
-  email: string | null;
-  phone: string | null;
-  alternatePhone: string | null;
-  address: string | null;
-  city: string | null;
-  province: string | null;
-  postalCode: string | null;
-  bankAlias: string | null;
-  bankCbu: string | null;
-  notes: string | null;
-  roles: string[];
-  ownedProperties: Array<{
-    id: string;
-    propertyId: string;
-    propertyCode: string;
-    propertyAddress: string;
-    percentage: number;
-    isPrimary: boolean;
-  }>;
-};
-
-const emptyForm = {
-  id: '', firstName: '', lastName: '', companyName: '', documentType: 'DNI', documentNumber: '', cuit: '',
-  email: '', phone: '', alternatePhone: '', address: '', city: '', province: '', postalCode: '', bankAlias: '', bankCbu: '', notes: '',
-  roles: ['GENERAL'] as string[],
-};
+type ContactRow = { id:string;firstName:string;lastName:string;companyName:string|null;documentType:string|null;documentNumber:string|null;cuit:string|null;email:string|null;phone:string|null;alternatePhone:string|null;address:string|null;city:string|null;province:string|null;postalCode:string|null;bankAlias:string|null;bankCbu:string|null;notes:string|null;roles:string[];ownedProperties:Array<{id:string;propertyId:string;propertyCode:string;propertyAddress:string;percentage:number;isPrimary:boolean}> };
+const emptyForm = { id:'',firstName:'',lastName:'',companyName:'',documentType:'DNI',documentNumber:'',cuit:'',email:'',phone:'',alternatePhone:'',address:'',city:'',province:'',postalCode:'',bankAlias:'',bankCbu:'',notes:'',roles:['GENERAL'] as string[] };
 
 export function ContactsClient({ initialContacts }: { initialContacts: ContactRow[] }) {
-  const [search, setSearch] = useState('');
-  const [form, setForm] = useState(emptyForm);
-  const [showForm, setShowForm] = useState(false);
-  const [error, setError] = useState('');
-  const [isPending, startTransition] = useTransition();
-
-  const contacts = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return initialContacts;
-    return initialContacts.filter((contact) =>
-      [contact.firstName, contact.lastName, contact.companyName, contact.documentNumber, contact.cuit, contact.email, contact.phone]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(q))
-    );
-  }, [initialContacts, search]);
-
-  function edit(contact: ContactRow) {
-    setForm({
-      id: contact.id,
-      firstName: contact.firstName,
-      lastName: contact.lastName,
-      companyName: contact.companyName || '',
-      documentType: contact.documentType || 'DNI',
-      documentNumber: contact.documentNumber || '',
-      cuit: contact.cuit || '',
-      email: contact.email || '',
-      phone: contact.phone || '',
-      alternatePhone: contact.alternatePhone || '',
-      address: contact.address || '',
-      city: contact.city || '',
-      province: contact.province || '',
-      postalCode: contact.postalCode || '',
-      bankAlias: contact.bankAlias || '',
-      bankCbu: contact.bankCbu || '',
-      notes: contact.notes || '',
-      roles: contact.roles.length ? contact.roles : ['GENERAL'],
-    });
-    setError('');
-    setShowForm(true);
-  }
-
-  function toggleRole(role: string) {
-    setForm((current) => ({
-      ...current,
-      roles: current.roles.includes(role)
-        ? current.roles.filter((item) => item !== role).length
-          ? current.roles.filter((item) => item !== role)
-          : ['GENERAL']
-        : [...current.roles.filter((item) => item !== 'GENERAL'), role],
-    }));
-  }
-
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
-    setError('');
-    startTransition(async () => {
-      try {
-        await saveContactAction({
-          ...(form.id ? { id: form.id } : {}),
-          firstName: form.firstName,
-          lastName: form.lastName,
-          companyName: form.companyName,
-          documentType: form.documentType,
-          documentNumber: form.documentNumber,
-          cuit: form.cuit,
-          email: form.email,
-          phone: form.phone,
-          alternatePhone: form.alternatePhone,
-          address: form.address,
-          city: form.city,
-          province: form.province,
-          postalCode: form.postalCode,
-          bankAlias: form.bankAlias,
-          bankCbu: form.bankCbu,
-          notes: form.notes,
-          roles: form.roles as any,
-        });
-        setShowForm(false);
-        setForm(emptyForm);
-      } catch (err: any) {
-        setError(err?.message || 'No se pudo guardar el contacto.');
-      }
-    });
-  }
-
-  function archive(id: string) {
-    if (!confirm('¿Archivar este contacto?')) return;
-    startTransition(async () => {
-      try {
-        await archiveContactAction(id);
-      } catch (err: any) {
-        setError(err?.message || 'No se pudo archivar el contacto.');
-      }
-    });
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="relative max-w-md w-full">
-          <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre, DNI, CUIT, email o teléfono..." className="form-input pl-9" />
-        </div>
-        <button onClick={() => { setForm(emptyForm); setError(''); setShowForm(true); }} className="btn-primary">
-          <Plus className="w-4 h-4" /> Nuevo contacto
-        </button>
-      </div>
-
-      {error && <div className="p-3 rounded-lg bg-rose-50 border border-rose-100 text-sm text-rose-700">{error}</div>}
-
-      {showForm && (
-        <form onSubmit={submit} className="section-card p-5 space-y-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-bold text-slate-900">{form.id ? 'Editar contacto' : 'Nuevo contacto'}</h2>
-              <p className="text-xs text-slate-500">Una misma persona puede cumplir varios roles dentro de la inmobiliaria.</p>
-            </div>
-            <button type="button" onClick={() => setShowForm(false)} className="text-xs text-slate-500 hover:text-slate-900">Cancelar</button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="Nombre *" value={form.firstName} onChange={(value) => setForm({ ...form, firstName: value })} required />
-            <Field label="Apellido *" value={form.lastName} onChange={(value) => setForm({ ...form, lastName: value })} required />
-            <Field label="Empresa / Razón social" value={form.companyName} onChange={(value) => setForm({ ...form, companyName: value })} />
-            <Field label="Documento" value={form.documentNumber} onChange={(value) => setForm({ ...form, documentNumber: value })} />
-            <Field label="CUIT" value={form.cuit} onChange={(value) => setForm({ ...form, cuit: value })} />
-            <Field label="Email" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} />
-            <Field label="Teléfono" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} />
-            <Field label="Teléfono alternativo" value={form.alternatePhone} onChange={(value) => setForm({ ...form, alternatePhone: value })} />
-            <Field label="Dirección" value={form.address} onChange={(value) => setForm({ ...form, address: value })} />
-            <Field label="Localidad" value={form.city} onChange={(value) => setForm({ ...form, city: value })} />
-            <Field label="Provincia" value={form.province} onChange={(value) => setForm({ ...form, province: value })} />
-            <Field label="Alias bancario" value={form.bankAlias} onChange={(value) => setForm({ ...form, bankAlias: value })} />
-          </div>
-
-          <div>
-            <span className="form-label">Roles</span>
-            <div className="flex flex-wrap gap-2">
-              {ROLE_OPTIONS.map(([value, label]) => (
-                <button key={value} type="button" onClick={() => toggleRole(value)} className={`status-pill ${form.roles.includes(value) ? 'status-pill--info' : 'status-pill--neutral'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="form-label">Notas internas</label>
-            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="form-input" />
-          </div>
-
-          <div className="flex justify-end">
-            <button disabled={isPending} type="submit" className="btn-primary">{isPending ? 'Guardando...' : 'Guardar contacto'}</button>
-          </div>
-        </form>
-      )}
-
-      <div className="section-card overflow-hidden">
-        <div className="divide-y divide-slate-100">
-          {contacts.length === 0 ? (
-            <div className="py-12 text-center text-sm text-slate-400">No hay contactos para mostrar.</div>
-          ) : contacts.map((contact) => (
-            <div key={contact.id} className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center flex-shrink-0">
-                  {contact.companyName ? <Building2 className="w-5 h-5" /> : <UserRound className="w-5 h-5" />}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link href={`/contactos/${contact.id}`} className="font-bold text-sm text-slate-900 hover:text-indigo-600">{contact.firstName} {contact.lastName}</Link>
-                    {contact.roles.map((role) => <span key={role} className="status-pill status-pill--neutral">{ROLE_OPTIONS.find(([value]) => value === role)?.[1] || role}</span>)}
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">{[contact.companyName, contact.documentNumber && `Doc. ${contact.documentNumber}`, contact.cuit && `CUIT ${contact.cuit}`, contact.phone, contact.email].filter(Boolean).join(' · ') || 'Sin datos adicionales'}</p>
-                  {contact.ownedProperties.length > 0 && <p className="text-[11px] text-indigo-600 mt-1 font-medium">{contact.ownedProperties.length} propiedad/es asociada/s</p>}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 self-end lg:self-auto">
-                <Link href={`/contactos/${contact.id}`} className="icon-action" title="Ficha 360"><ExternalLink className="w-4 h-4" /></Link>
-                <button onClick={() => edit(contact)} className="icon-action" title="Editar"><Pencil className="w-4 h-4" /></button>
-                <button onClick={() => archive(contact.id)} className="icon-action hover:!text-rose-600 hover:!border-rose-200 hover:!bg-rose-50" title="Archivar"><Trash2 className="w-4 h-4" /></button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+  const [search,setSearch]=useState(''); const [form,setForm]=useState(emptyForm); const [showForm,setShowForm]=useState(false); const [error,setError]=useState(''); const [isPending,startTransition]=useTransition();
+  const contacts=useMemo(()=>{const q=search.trim().toLowerCase();if(!q)return initialContacts;return initialContacts.filter(contact=>[contact.firstName,contact.lastName,contact.companyName,contact.documentNumber,contact.cuit,contact.email,contact.phone].filter(Boolean).some(value=>String(value).toLowerCase().includes(q)))},[initialContacts,search]);
+  function edit(contact:ContactRow){setForm({id:contact.id,firstName:contact.firstName,lastName:contact.lastName,companyName:contact.companyName||'',documentType:contact.documentType||'DNI',documentNumber:contact.documentNumber||'',cuit:contact.cuit||'',email:contact.email||'',phone:contact.phone||'',alternatePhone:contact.alternatePhone||'',address:contact.address||'',city:contact.city||'',province:contact.province||'',postalCode:contact.postalCode||'',bankAlias:contact.bankAlias||'',bankCbu:contact.bankCbu||'',notes:contact.notes||'',roles:contact.roles.length?contact.roles:['GENERAL']});setError('');setShowForm(true)}
+  function toggleRole(role:string){setForm(current=>({...current,roles:current.roles.includes(role)?(current.roles.filter(item=>item!==role).length?current.roles.filter(item=>item!==role):['GENERAL']):[...current.roles.filter(item=>item!=='GENERAL'),role]}))}
+  function submit(event:React.FormEvent){event.preventDefault();setError('');startTransition(async()=>{try{await saveContactAction({...(form.id?{id:form.id}:{}),firstName:form.firstName,lastName:form.lastName,companyName:form.companyName,documentType:form.documentType,documentNumber:form.documentNumber,cuit:form.cuit,email:form.email,phone:form.phone,alternatePhone:form.alternatePhone,address:form.address,city:form.city,province:form.province,postalCode:form.postalCode,bankAlias:form.bankAlias,bankCbu:form.bankCbu,notes:form.notes,roles:form.roles as any});setShowForm(false);setForm(emptyForm);window.location.reload()}catch(err:any){setError(err?.message||'No se pudo guardar el contacto.')}})}
+  function archive(id:string){if(!confirm('¿Archivar este contacto?'))return;startTransition(async()=>{try{await archiveContactAction(id);window.location.reload()}catch(err:any){setError(err?.message||'No se pudo archivar el contacto.')}})}
+  return <div className="space-y-5">
+    <div className="ui-summary-strip"><span className="ui-summary-chip"><strong>{contacts.length}</strong> contactos</span><span className="ui-summary-chip"><strong>{contacts.filter(c=>c.roles.includes('OWNER')).length}</strong> propietarios</span><span className="ui-summary-chip"><strong>{contacts.filter(c=>c.roles.includes('PROVIDER')).length}</strong> proveedores</span></div>
+    <WorkspaceToolbar><div className="ui-filter-row"><WorkspaceSearch value={search} onChange={setSearch} placeholder="Buscar nombre, DNI, CUIT, email o teléfono..."/></div><button onClick={()=>{setForm(emptyForm);setError('');setShowForm(true)}} className="btn-primary"><Plus className="w-4 h-4"/>Nuevo contacto</button></WorkspaceToolbar>
+    {error&&!showForm&&<div className="p-3 rounded-lg bg-rose-50 border border-rose-100 text-sm text-rose-700">{error}</div>}
+    <section className="ui-list-shell">{contacts.length===0?<EmptyState title="No hay contactos para mostrar"/>:contacts.map(contact=><div key={contact.id} className="ui-list-row"><div className="flex items-start gap-3 min-w-0"><div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">{contact.companyName?<Building2 className="w-4 h-4"/>:<UserRound className="w-4 h-4"/>}</div><div className="min-w-0"><Link href={`/contactos/${contact.id}`} className="ui-list-row__title hover:text-indigo-600">{contact.firstName} {contact.lastName}</Link><div className="ui-list-row__meta truncate">{[contact.companyName,contact.documentNumber&&`Doc. ${contact.documentNumber}`,contact.phone,contact.email].filter(Boolean).join(' · ')||'Sin datos adicionales'}</div><div className="flex flex-wrap gap-1 mt-2">{contact.roles.slice(0,3).map(role=><span key={role} className="status-pill status-pill--neutral">{ROLE_OPTIONS.find(([value])=>value===role)?.[1]||role}</span>)}{contact.roles.length>3&&<span className="status-pill status-pill--neutral">+{contact.roles.length-3}</span>}</div></div></div><div><div className="text-[9px] text-slate-400">Propiedades</div><div className="text-xs font-bold">{contact.ownedProperties.length}</div></div><div><div className="text-[9px] text-slate-400">CUIT</div><div className="text-xs font-semibold">{contact.cuit||'—'}</div></div><div className="ui-actions"><Link href={`/contactos/${contact.id}`} className="icon-action" title="Ficha 360"><ExternalLink className="w-4 h-4"/></Link><button onClick={()=>edit(contact)} className="icon-action" title="Editar"><Pencil className="w-4 h-4"/></button><button onClick={()=>archive(contact.id)} className="icon-action hover:!text-rose-600" title="Archivar"><Trash2 className="w-4 h-4"/></button></div></div>)}</section>
+    <Drawer open={showForm} onClose={()=>setShowForm(false)} title={form.id?'Editar contacto':'Nuevo contacto'} subtitle="La ficha está dividida por bloques para reducir densidad y errores de carga." width="wide">
+      <form onSubmit={submit}>
+        {error&&<div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-100 text-sm text-rose-700">{error}</div>}
+        <FormSection title="Identidad" description="Datos básicos de la persona o empresa."><Field label="Nombre *" value={form.firstName} onChange={value=>setForm({...form,firstName:value})} required/><Field label="Apellido *" value={form.lastName} onChange={value=>setForm({...form,lastName:value})} required/><Field label="Empresa / Razón social" value={form.companyName} onChange={value=>setForm({...form,companyName:value})}/><Field label="Documento" value={form.documentNumber} onChange={value=>setForm({...form,documentNumber:value})}/><Field label="CUIT" value={form.cuit} onChange={value=>setForm({...form,cuit:value})}/></FormSection>
+        <FormSection title="Contacto y domicilio"><Field label="Email" type="email" value={form.email} onChange={value=>setForm({...form,email:value})}/><Field label="Teléfono" value={form.phone} onChange={value=>setForm({...form,phone:value})}/><Field label="Teléfono alternativo" value={form.alternatePhone} onChange={value=>setForm({...form,alternatePhone:value})}/><Field label="Dirección" value={form.address} onChange={value=>setForm({...form,address:value})}/><Field label="Localidad" value={form.city} onChange={value=>setForm({...form,city:value})}/><Field label="Provincia" value={form.province} onChange={value=>setForm({...form,province:value})}/></FormSection>
+        <FormSection title="Datos administrativos"><Field label="Alias bancario" value={form.bankAlias} onChange={value=>setForm({...form,bankAlias:value})}/><Field label="CBU" value={form.bankCbu} onChange={value=>setForm({...form,bankCbu:value})}/><div className="col-span-full"><span className="form-label">Roles</span><div className="flex flex-wrap gap-2">{ROLE_OPTIONS.map(([value,label])=><button key={value} type="button" onClick={()=>toggleRole(value)} className={`status-pill ${form.roles.includes(value)?'status-pill--info':'status-pill--neutral'}`}>{label}</button>)}</div></div><label className="col-span-full"><span className="form-label">Notas internas</span><textarea value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} rows={4} className="form-input"/></label></FormSection>
+        <div className="ui-form-actions"><button type="button" onClick={()=>setShowForm(false)} className="btn-secondary">Cancelar</button><button disabled={isPending} type="submit" className="btn-primary">{isPending?'Guardando...':'Guardar contacto'}</button></div>
+      </form>
+    </Drawer>
+  </div>
 }
-
-function Field({ label, value, onChange, required, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string }) {
-  return (
-    <div>
-      <label className="form-label">{label}</label>
-      <input type={type} required={required} value={value} onChange={(e) => onChange(e.target.value)} className="form-input" />
-    </div>
-  );
-}
+function Field({label,value,onChange,required,type='text'}:{label:string;value:string;onChange:(value:string)=>void;required?:boolean;type?:string}){return <label><span className="form-label">{label}</span><input type={type} required={required} value={value} onChange={e=>onChange(e.target.value)} className="form-input"/></label>}
