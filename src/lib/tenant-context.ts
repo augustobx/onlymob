@@ -2,7 +2,7 @@ import 'server-only';
 
 import { headers, cookies } from 'next/headers';
 import { platformPrisma } from '@/lib/prisma-core';
-import { subscriptionStatusAllowsAccess } from '@/lib/saas-policy';
+import { reconcileTenantMembership } from '@/lib/membership';
 
 export type TenantContext = {
   id: string;
@@ -21,7 +21,7 @@ const PLATFORM_HOST = normalizeHostname(process.env.PLATFORM_HOST || 'onlymob.na
 const BASE_DOMAIN = normalizeHostname(process.env.TENANT_BASE_DOMAIN || 'nanoapps.ar');
 const POSITIVE_CACHE_TTL_MS = 30_000;
 const NEGATIVE_CACHE_TTL_MS = 2_000;
-const cache = new Map<string, { expiresAt: number; value: Promise<TenantContext | null> }>();
+const cache = new Map<string, { expiresAt: number; value: Promise<TenantContext> }>();
 
 export class TenantResolutionError extends Error {
   constructor(message = 'TENANT_NOT_FOUND') { super(message); this.name = 'TenantResolutionError'; }
@@ -36,20 +36,10 @@ export function normalizeHostname(value: string | null | undefined) {
 
 export async function getRequestHostname() {
   const headerStore = await headers();
-  return normalizeHostname(headerStore.get('host'));
+  return normalizeHostname(headerStore.get('x-forwarded-host') || headerStore.get('host'));
 }
 
-async function subscriptionAllowsAccess(tenantId: string) {
-  const subscription = await platformPrisma.tenantSubscription.findFirst({
-    where: { tenantId },
-    orderBy: { createdAt: 'desc' },
-    select: { status: true, trialEndsAt: true },
-  });
-  if (!subscription) return true;
-  return subscriptionStatusAllowsAccess(subscription.status, subscription.trialEndsAt);
-}
-
-async function findTenantRecord(hostname: string) {
+async function lookupTenantRecord(hostname: string) {
   const domain = await platformPrisma.tenantDomain.findUnique({ where: { hostname }, include: { tenant: true } });
   let tenant = domain?.verifiedAt ? domain.tenant : null;
 
@@ -67,7 +57,6 @@ async function findTenantRecord(hostname: string) {
     if (!tenant) tenant = await platformPrisma.tenant.findFirst({ where: { status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
   }
 
-  if (!tenant || tenant.status !== 'ACTIVE' || !(await subscriptionAllowsAccess(tenant.id))) return null;
   return tenant;
 }
 
@@ -75,38 +64,61 @@ function toContext(tenant: any, hostname: string): TenantContext {
   return { id: tenant.id, slug: tenant.slug, name: tenant.name, hostname, timezone: tenant.timezone || 'America/Argentina/Buenos_Aires', logoUrl: tenant.logoUrl, receiptHeader: tenant.receiptHeader, address: tenant.address ?? null, phone: tenant.phone ?? null, cuit: tenant.cuit ?? null };
 }
 
+async function resolveHostnameContext(hostname: string) {
+  const tenant = await lookupTenantRecord(hostname);
+  if (!tenant || tenant.status === 'ARCHIVED') throw new TenantResolutionError('TENANT_NOT_FOUND');
+  const membership = await reconcileTenantMembership(tenant.id);
+  if (!membership.allowed) throw new TenantResolutionError('TENANT_SUSPENDED');
+  return toContext(tenant, hostname);
+}
+
+export async function getTenantRequestAccess() {
+  const hostname = await getRequestHostname();
+  const tenant = await lookupTenantRecord(hostname);
+  if (!tenant || tenant.status === 'ARCHIVED') return { state: 'NOT_FOUND' as const, tenant: null, membership: null };
+  const membership = await reconcileTenantMembership(tenant.id);
+  return {
+    state: membership.allowed ? 'ACTIVE' as const : 'SUSPENDED' as const,
+    tenant: toContext(tenant, hostname),
+    membership,
+  };
+}
+
 export async function findTenant(hostname: string): Promise<TenantContext | null> {
-  const tenant = await findTenantRecord(hostname);
-  return tenant ? toContext(tenant, hostname) : null;
+  const normalized = normalizeHostname(hostname);
+  const tenant = await lookupTenantRecord(normalized);
+  if (!tenant || tenant.status === 'ARCHIVED') return null;
+  const membership = await reconcileTenantMembership(tenant.id);
+  return membership.allowed ? toContext(tenant, normalized) : null;
 }
 
 export async function resolveTenantContext(): Promise<TenantContext> {
   const trustedTenantId = process.env.ONLYMOB_TENANT_ID;
   if (trustedTenantId) {
     const tenant = await platformPrisma.tenant.findUnique({ where: { id: trustedTenantId } });
-    if (!tenant) throw new TenantResolutionError('TENANT_NOT_FOUND');
-    if (tenant.status !== 'ACTIVE' || !(await subscriptionAllowsAccess(tenant.id))) throw new TenantResolutionError('TENANT_SUSPENDED');
+    if (!tenant || tenant.status === 'ARCHIVED') throw new TenantResolutionError('TENANT_NOT_FOUND');
+    const membership = await reconcileTenantMembership(tenant.id);
+    if (!membership.allowed) throw new TenantResolutionError('TENANT_SUSPENDED');
     return toContext(tenant, `${tenant.slug}.${BASE_DOMAIN}`);
   }
 
   const hostname = await getRequestHostname();
   const existing = cache.get(hostname);
-  if (existing && existing.expiresAt > Date.now()) {
-    const value = await existing.value;
-    if (value) return value;
-    throw new TenantResolutionError('TENANT_NOT_FOUND');
-  }
+  if (existing && existing.expiresAt > Date.now()) return existing.value;
 
-  const value = findTenant(hostname);
+  const value = resolveHostnameContext(hostname);
   const entry = { value, expiresAt: Date.now() + NEGATIVE_CACHE_TTL_MS };
   cache.set(hostname, entry);
-  const tenant = await value;
-  if (!tenant) {
-    console.error(`[OnlyMob tenant] TENANT_NOT_FOUND host=${hostname || '<empty>'} base=${BASE_DOMAIN} platform=${PLATFORM_HOST}`);
-    throw new TenantResolutionError('TENANT_NOT_FOUND');
+  try {
+    const tenant = await value;
+    entry.expiresAt = Date.now() + POSITIVE_CACHE_TTL_MS;
+    return tenant;
+  } catch (error) {
+    if (error instanceof TenantResolutionError && error.message === 'TENANT_NOT_FOUND') {
+      console.error(`[OnlyMob tenant] TENANT_NOT_FOUND host=${hostname || '<empty>'} base=${BASE_DOMAIN} platform=${PLATFORM_HOST}`);
+    }
+    throw error;
   }
-  entry.expiresAt = Date.now() + POSITIVE_CACHE_TTL_MS;
-  return tenant;
 }
 
 export function clearTenantResolutionCache() { cache.clear(); }
