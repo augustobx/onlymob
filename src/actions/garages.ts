@@ -7,6 +7,8 @@ import { requirePermission } from '@/lib/permissions';
 import { assertTenantPlanLimit } from '@/lib/saas';
 import { z } from 'zod';
 
+const ACTIVE_LEASE_STATUSES: Array<'CURRENT' | 'EXPIRING' | 'RENEWED'> = ['CURRENT', 'EXPIRING', 'RENEWED'];
+
 const GarageSchema = z.object({
   name: z.string().min(1, 'El nombre es obligatorio').max(120),
   address: z.string().min(3, 'La dirección es obligatoria').max(255),
@@ -22,8 +24,16 @@ export async function getGaragesAction() {
         orderBy: { spaceNumber: 'asc' },
         include: {
           leaseSpaces: {
-            where: { lease: { tenantId: tenant.id, status: 'CURRENT' } },
-            include: { lease: { include: { renter: true } } },
+            where: { lease: { tenantId: tenant.id, status: { in: ACTIVE_LEASE_STATUSES } } },
+            include: {
+              lease: {
+                include: {
+                  renter: true,
+                  debts: { where: { status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] } } },
+                  spaces: { include: { space: { include: { garage: true } } } },
+                },
+              },
+            },
             take: 1,
           },
         },
@@ -37,18 +47,55 @@ export async function getGaragesAction() {
     name: garage.name,
     address: garage.address,
     totalSpaces: garage.spaces.length,
-    occupied: garage.spaces.filter((space) => space.status === 'OCCUPIED').length,
-    free: garage.spaces.filter((space) => space.status === 'FREE').length,
+    occupied: garage.spaces.filter((space) => space.leaseSpaces.length > 0 || space.status === 'OCCUPIED').length,
+    free: garage.spaces.filter((space) => space.leaseSpaces.length === 0 && space.status === 'FREE').length,
+    maintenance: garage.spaces.filter((space) => space.leaseSpaces.length === 0 && space.status === 'MAINTENANCE').length,
+    orphaned: garage.spaces.filter((space) => space.status === 'OCCUPIED' && space.leaseSpaces.length === 0).length,
     spaces: garage.spaces.map((space) => {
       const activeLeaseSpace = space.leaseSpaces[0];
+      const lease = activeLeaseSpace?.lease;
       return {
         id: space.id,
         spaceNumber: space.spaceNumber,
-        status: space.status,
-        renterName: activeLeaseSpace ? `${activeLeaseSpace.lease.renter.firstName} ${activeLeaseSpace.lease.renter.lastName}` : null,
-        leaseId: activeLeaseSpace?.lease.id || null,
+        status: lease ? 'OCCUPIED' as const : space.status,
+        renterName: lease ? `${lease.renter.firstName} ${lease.renter.lastName}` : null,
+        leaseId: lease?.id || null,
+        lease: lease ? {
+          id: lease.id,
+          renterId: lease.renterId,
+          renterName: `${lease.renter.firstName} ${lease.renter.lastName}`,
+          renterDni: lease.renter.dni,
+          renterPhone: lease.renter.phone,
+          renterEmail: lease.renter.email,
+          startDate: lease.startDate.toISOString(),
+          endDate: lease.endDate.toISOString(),
+          rentPerSpace: Number(lease.rentPerSpace),
+          totalRent: Number(lease.totalRent),
+          deposit: Number(lease.deposit),
+          increasePercent: Number(lease.increasePercent),
+          status: lease.status,
+          notes: lease.notes,
+          pendingDebtTotal: lease.debts.reduce((sum, debt) => sum + Math.max(0, Number(debt.amount) - Number(debt.paidAmount)), 0),
+          spacesDescription: lease.spaces.map((item) => `${item.space.garage.name} #${item.space.spaceNumber}`).join(', '),
+        } : null,
       };
     }),
+  }));
+}
+
+export async function getGarageRentersAction() {
+  const { tenant } = await requirePermission('garages', 'read');
+  const renters = await platformPrisma.propertyRenter.findMany({
+    where: { tenantId: tenant.id, status: 'ACTIVE' },
+    select: { id: true, firstName: true, lastName: true, dni: true, email: true, phone: true },
+    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+  });
+  return renters.map((renter) => ({
+    id: renter.id,
+    fullName: `${renter.lastName}, ${renter.firstName}`,
+    dni: renter.dni,
+    email: renter.email,
+    phone: renter.phone,
   }));
 }
 
@@ -71,7 +118,7 @@ export async function saveGarageAction(data: { id?: string; name: string; addres
 
     const existing = await tx.garage.findFirst({
       where: { id: data.id, tenantId: tenant.id },
-      include: { spaces: { include: { leaseSpaces: { where: { lease: { tenantId: tenant.id, status: 'CURRENT' } } } } } },
+      include: { spaces: { include: { leaseSpaces: { where: { lease: { tenantId: tenant.id, status: { in: ACTIVE_LEASE_STATUSES } } } } } } },
     });
     if (!existing) throw new Error('Cochera no encontrada.');
 
@@ -115,10 +162,11 @@ export async function toggleSpaceStatusAction(spaceId: string, status: 'FREE' | 
   const { tenant, session } = await requirePermission('garages', 'update');
   const space = await platformPrisma.garageSpace.findFirst({
     where: { id: spaceId, garage: { tenantId: tenant.id } },
-    include: { leaseSpaces: { where: { lease: { tenantId: tenant.id, status: 'CURRENT' } }, take: 1 } },
+    include: { leaseSpaces: { where: { lease: { tenantId: tenant.id, status: { in: ACTIVE_LEASE_STATUSES } } }, take: 1 } },
   });
   if (!space) throw new Error('Plaza no encontrada.');
   if (space.leaseSpaces.length > 0 && status !== 'OCCUPIED') throw new Error('La plaza tiene un contrato vigente y debe permanecer ocupada.');
+  if (space.leaseSpaces.length === 0 && status === 'OCCUPIED') throw new Error('Una plaza sólo puede ocuparse creando un contrato de cochera.');
 
   await platformPrisma.garageSpace.update({ where: { id: space.id }, data: { status } });
   await auditTenantAction({ tenantId: tenant.id, actorUserId: session.userId, action: 'GARAGE_SPACE_STATUS_CHANGED', entityType: 'GarageSpace', entityId: space.id, metadata: { status } });
