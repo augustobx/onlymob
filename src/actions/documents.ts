@@ -28,7 +28,7 @@ async function loadRelations(tenantId:string,relations:Relations){
   relations.inspectionId?platformPrisma.inspection.findFirst({where:{id:relations.inspectionId,tenantId},include:{property:true,renter:true,inspector:true}}):null,
   relations.contactId?platformPrisma.contact.findFirst({where:{id:relations.contactId,tenantId,archivedAt:null}}):null,
   relations.dealId?platformPrisma.deal.findFirst({where:{id:relations.dealId,tenantId},include:{property:true,contact:true,agent:true}}):null,
-  relations.paymentId?platformPrisma.payment.findFirst({where:{id:relations.paymentId,tenantId},include:{debt:{include:{renter:true,propertyLease:{include:{property:true}}}}}):null,
+  relations.paymentId?platformPrisma.payment.findFirst({where:{id:relations.paymentId,tenantId},include:{debt:{include:{renter:true,propertyLease:{include:{property:true}}}}}}):null,
   relations.ownerSettlementId?platformPrisma.ownerSettlement.findFirst({where:{id:relations.ownerSettlementId,tenantId},include:{owner:true}}):null,
  ]);
  const checks:Array<[string|null|undefined,unknown,string]>=[[relations.propertyId,property,'Propiedad'],[relations.renterId,renter,'Inquilino'],[relations.propertyLeaseId,lease,'Contrato'],[relations.maintenanceRequestId,maintenance,'Mantenimiento'],[relations.inspectionId,inspection,'Inspección'],[relations.contactId,contact,'Contacto'],[relations.dealId,deal,'Operación'],[relations.paymentId,payment,'Pago'],[relations.ownerSettlementId,settlement,'Liquidación']];
