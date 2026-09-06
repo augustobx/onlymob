@@ -3,6 +3,7 @@ import { getTenantAdminContext } from '@/lib/tenant-guard';
 import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { EntitySelectEnhancer } from '@/components/ui/entity-select-enhancer';
+import '../../uiux.css';
 
 export default async function TenantAdminLayout({ children }: { children: React.ReactNode }) {
   const context = await getTenantAdminContext();
