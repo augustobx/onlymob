@@ -8,14 +8,15 @@ import { subscriptionStatusAllowsAccess } from '../src/lib/saas-policy';
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
-test('subscription access policy is fail-closed for suspended and canceled tenants', () => {
+test('subscription access policy is fail-closed for suspended, canceled and expired tenants', () => {
   const now = new Date('2026-09-06T12:00:00-03:00');
-  assert.equal(subscriptionStatusAllowsAccess('ACTIVE', null, now), true);
-  assert.equal(subscriptionStatusAllowsAccess('PAST_DUE', null, now), true, 'PAST_DUE conserva acceso como período de gracia');
-  assert.equal(subscriptionStatusAllowsAccess('SUSPENDED', null, now), false);
-  assert.equal(subscriptionStatusAllowsAccess('CANCELED', null, now), false);
-  assert.equal(subscriptionStatusAllowsAccess('TRIAL', '2026-09-07T12:00:00-03:00', now), true);
-  assert.equal(subscriptionStatusAllowsAccess('TRIAL', '2026-09-05T12:00:00-03:00', now), false);
+  assert.equal(subscriptionStatusAllowsAccess('ACTIVE', null, '2026-09-07T12:00:00-03:00', now), true);
+  assert.equal(subscriptionStatusAllowsAccess('PAST_DUE', null, '2026-09-07T12:00:00-03:00', now), true, 'PAST_DUE conserva acceso sólo mientras su período siga vigente');
+  assert.equal(subscriptionStatusAllowsAccess('ACTIVE', null, '2026-09-05T12:00:00-03:00', now), false);
+  assert.equal(subscriptionStatusAllowsAccess('SUSPENDED', null, '2026-09-07T12:00:00-03:00', now), false);
+  assert.equal(subscriptionStatusAllowsAccess('CANCELED', null, '2026-09-07T12:00:00-03:00', now), false);
+  assert.equal(subscriptionStatusAllowsAccess('TRIAL', '2026-09-07T12:00:00-03:00', '2026-09-07T12:00:00-03:00', now), true);
+  assert.equal(subscriptionStatusAllowsAccess('TRIAL', '2026-09-05T12:00:00-03:00', '2026-09-07T12:00:00-03:00', now), false);
 });
 
 test('OnlyMob SaaS feature catalog is explicit and tenant overrides work both ways', () => {
@@ -41,7 +42,7 @@ test('disabled admin modules disappear from navigation while page guards remain 
   const analytics = read('src/app/(tenant)/(admin)/analytics/page.tsx');
   const integrations = read('src/app/(tenant)/(admin)/integraciones/page.tsx');
 
-  assert.ok(layout.includes('getTenantFeatureFlags(tenant.id)'));
+  assert.ok(layout.includes('getTenantAdminContext()'));
   assert.ok(sidebar.includes("feature:'analytics'"));
   assert.ok(sidebar.includes("feature:'integrations'"));
   assert.ok(mobile.includes("feature:'analytics'"));
@@ -71,12 +72,12 @@ test('quick rental cards expose Property 360 for property leases', () => {
   assert.ok(client.includes('item.propertyHref'));
 });
 
-test('SaaS panel manages all current plan capacity limits', () => {
-  const panel = read('src/app/(platform)/superadmin/saas-panel.tsx');
+test('SaaS plan management covers all current capacity limits', () => {
+  const panel = read('src/app/(platform)/superadmin/planes/plans-client.tsx');
   const actions = read('src/actions/saas-admin.ts');
   for (const field of ['maxProperties', 'maxGarages', 'maxUsers', 'maxPublications']) {
     assert.ok(panel.includes(field), `El panel debe exponer ${field}`);
     assert.ok(actions.includes(field), `Las actions deben persistir ${field}`);
   }
-  assert.ok(actions.includes('!plan.isActive'), 'No debe poder asignarse un plan inactivo a un tenant nuevo');
+  assert.ok(actions.includes('!plan.isActive'), 'No debe poder asignarse un plan inactivo nuevo a un tenant');
 });

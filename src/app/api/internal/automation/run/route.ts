@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { runAutomationSweep } from '@/lib/automation-runner';
 import { dispatchPendingWebhooks } from '@/lib/integrations';
 import { dispatchPendingCommunications } from '@/lib/communication-dispatcher';
+import { reconcileExpiredMemberships } from '@/lib/membership';
 
 function authorized(request: NextRequest) {
   const secret = process.env.AUTOMATION_CRON_SECRET;
@@ -23,12 +24,14 @@ async function handle(request: NextRequest) {
 
   try {
     const tenantId = request.nextUrl.searchParams.get('tenantId');
+    // La membresía es política de plataforma y se reconcilia aunque el tenant tenga automation OFF.
+    const membership = await reconcileExpiredMemberships({ tenantId });
     const [automation, webhooks, communications] = await Promise.all([
       runAutomationSweep({ tenantId }),
       dispatchPendingWebhooks({ tenantId, limit: 100 }),
       dispatchPendingCommunications({ tenantId, limit: 60 }),
     ]);
-    return NextResponse.json({ ok: true, automation, webhooks, communications });
+    return NextResponse.json({ ok: true, membership, automation, webhooks, communications });
   } catch (error) {
     console.error('[automation-runner]', error);
     return NextResponse.json({ error: 'Automation sweep failed' }, { status: 500 });
