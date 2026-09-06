@@ -88,6 +88,7 @@ export async function setOwnerPortalEnabledAction(ownerContactId: string, enable
 async function requireOwnerPortalSession() {
   const session = await getOwnerSession();
   if (!session) throw new Error('UNAUTHORIZED');
+  if (!(await isTenantFeatureEnabled(session.tenantId, 'owner_portal'))) throw new Error('FEATURE_DISABLED');
   return session;
 }
 

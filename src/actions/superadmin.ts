@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import bcrypt from 'bcryptjs';
 import { platformPrisma } from '@/lib/prisma-core';
 import { getSuperAdminSession } from '@/lib/auth';
+import { clearTenantResolutionCache } from '@/lib/tenant-context';
 
 const DEFAULT_ROLE_PERMISSIONS: Record<string, Array<[string, string]>> = {
   OWNER: ['dashboard','properties','garages','leases','collections','renters','contacts','settings','audit']
@@ -134,7 +135,7 @@ export async function createTenantAction(data: {
       },
     });
 
-    await tx.tenantSubscription.create({
+    const subscription = await tx.tenantSubscription.create({
       data: {
         tenantId: created.id,
         planId: plan.id,
@@ -144,9 +145,21 @@ export async function createTenantAction(data: {
       },
     });
 
+    await tx.auditLog.create({
+      data: {
+        tenantId: created.id,
+        actorType: 'SUPERADMIN',
+        action: 'TENANT_PROVISIONED',
+        entityType: 'Tenant',
+        entityId: created.id,
+        metadata: { superAdminId: session.superAdminId, planCode: plan.code, subscriptionId: subscription.id },
+      },
+    });
+
     return created;
   });
 
+  clearTenantResolutionCache();
   revalidatePath('/superadmin');
   return { success: true, tenantId: tenant.id };
 }
@@ -155,11 +168,27 @@ export async function toggleTenantStatusAction(tenantId: string, status: 'ACTIVE
   const session = await getSuperAdminSession();
   if (!session || session.role !== 'SUPERADMIN') throw new Error('Acceso no autorizado.');
 
-  await platformPrisma.tenant.update({
-    where: { id: tenantId },
-    data: { status, archivedAt: status === 'ARCHIVED' ? new Date() : null },
+  const tenant = await platformPrisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, status: true } });
+  if (!tenant) throw new Error('Tenant inexistente.');
+
+  await platformPrisma.$transaction(async (tx) => {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: { status, archivedAt: status === 'ARCHIVED' ? new Date() : null },
+    });
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorType: 'SUPERADMIN',
+        action: 'TENANT_STATUS_CHANGED',
+        entityType: 'Tenant',
+        entityId: tenantId,
+        metadata: { fromStatus: tenant.status, toStatus: status, superAdminId: session.superAdminId },
+      },
+    });
   });
 
+  clearTenantResolutionCache();
   revalidatePath('/superadmin');
   return { success: true };
 }
