@@ -1,9 +1,18 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { Plus, Search, MessageSquarePlus, Target, ArrowRight, Building2 } from 'lucide-react';
-import { addLeadInteractionAction, getDemandMatchesAction, moveLeadAction, recordPropertyInterestAction, saveDemandAction, saveLeadAction } from '@/actions/crm';
+import { ArrowRight, Building2, MessageSquarePlus, Plus, Target } from 'lucide-react';
+import {
+  addLeadInteractionAction,
+  getDemandMatchesAction,
+  moveLeadAction,
+  recordPropertyInterestAction,
+  saveDemandAction,
+  saveLeadAction,
+} from '@/actions/crm';
 import { formatCurrency } from '@/lib/utils';
+import { Drawer, EmptyState, FormSection, WorkspaceTab, WorkspaceTabs, WorkspaceToolbar } from '@/components/ui/workspace';
+import { WorkspaceSearch } from '@/components/ui/workspace-search';
 
 const PIPELINE = [
   ['NEW','Nuevo'],['CONTACTED','Contactado'],['QUALIFIED','Calificado'],['PROPERTIES_SENT','Propiedades enviadas'],['VISIT_SCHEDULED','Visita agendada'],['VISITED','Visitó'],['NEGOTIATION','Negociación'],['RESERVATION','Reserva'],['WON','Ganado'],['LOST','Perdido'],
@@ -14,8 +23,7 @@ export function CrmClient({ data }: { data: any }) {
   const [search, setSearch] = useState('');
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [showLeadForm, setShowLeadForm] = useState(false);
-  const [showInteraction, setShowInteraction] = useState(false);
-  const [showDemand, setShowDemand] = useState(false);
+  const [detailTab, setDetailTab] = useState<'SUMMARY'|'INTERACTION'|'DEMAND'>('SUMMARY');
   const [matches, setMatches] = useState<any[]>([]);
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -25,6 +33,12 @@ export function CrmClient({ data }: { data: any }) {
     if (!q) return data.leads;
     return data.leads.filter((lead: any) => [lead.title, lead.contact?.firstName, lead.contact?.lastName, lead.contact?.phone, lead.contact?.email].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)));
   }, [data.leads, search]);
+
+  const totals = useMemo(() => ({
+    active: leads.filter((lead:any)=>!['WON','LOST'].includes(lead.status)).length,
+    urgent: leads.filter((lead:any)=>lead.priority==='URGENT').length,
+    visits: leads.filter((lead:any)=>['VISIT_SCHEDULED','VISITED'].includes(lead.status)).length,
+  }), [leads]);
 
   function run(task: () => Promise<any>, after?: (result: any) => void) {
     setError('');
@@ -55,60 +69,85 @@ export function CrmClient({ data }: { data: any }) {
     run(() => saveDemandAction({ leadId: selectedLead.id, contactId: selectedLead.contactId, operation: String(f.get('operation')) as any, propertyType: String(f.get('propertyType') || '') as any || null, zones, budgetMin: f.get('budgetMin') ? Number(f.get('budgetMin')) : null, budgetMax: f.get('budgetMax') ? Number(f.get('budgetMax')) : null, currency: String(f.get('currency') || 'ARS'), roomsMin: f.get('roomsMin') ? Number(f.get('roomsMin')) : null, bedroomsMin: f.get('bedroomsMin') ? Number(f.get('bedroomsMin')) : null, sqmMin: f.get('sqmMin') ? Number(f.get('sqmMin')) : null, amenities: [], notes: String(f.get('notes') || '') }), () => window.location.reload());
   }
 
-  function loadMatches(demandId: string) {
-    run(() => getDemandMatchesAction(demandId), (rows) => setMatches(rows));
-  }
+  function loadMatches(demandId: string) { run(() => getDemandMatchesAction(demandId), (rows) => setMatches(rows)); }
+  function openLead(lead:any){ setSelectedLead(lead); setMatches([]); setDetailTab('SUMMARY'); }
 
   return <div className="space-y-5">
-    <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-      <div className="relative max-w-md w-full"><Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400"/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Buscar lead, persona, teléfono..." className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"/></div>
-      <button onClick={()=>setShowLeadForm(true)} className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold"><Plus className="w-4 h-4"/>Nuevo lead</button>
+    <div className="ui-summary-strip">
+      <span className="ui-summary-chip"><strong>{leads.length}</strong> leads</span>
+      <span className="ui-summary-chip"><strong>{totals.active}</strong> activos</span>
+      <span className="ui-summary-chip"><strong>{totals.visits}</strong> en visitas</span>
+      <span className="ui-summary-chip"><strong>{totals.urgent}</strong> urgentes</span>
     </div>
+
+    <WorkspaceToolbar>
+      <div className="ui-filter-row"><WorkspaceSearch value={search} onChange={setSearch} placeholder="Buscar lead, persona, teléfono..." /></div>
+      <button onClick={()=>setShowLeadForm(true)} className="btn-primary"><Plus className="w-4 h-4"/>Nuevo lead</button>
+    </WorkspaceToolbar>
+
     {error && <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg text-sm text-rose-700">{error}</div>}
 
-    {showLeadForm && <form onSubmit={submitLead} className="bg-white border border-slate-200 rounded-xl p-5 grid grid-cols-1 md:grid-cols-4 gap-4">
-      <div className="md:col-span-4 flex justify-between"><div><h2 className="font-bold">Nuevo lead</h2><p className="text-xs text-slate-500">Creá el contacto primero si todavía no existe.</p></div><button type="button" onClick={()=>setShowLeadForm(false)} className="text-xs">Cancelar</button></div>
-      <Select name="contactId" label="Contacto *" required options={data.contacts.map((c:any)=>[c.id, `${c.firstName} ${c.lastName}`])}/>
-      <Select name="agentId" label="Agente" options={[['','Sin asignar'],...data.users.map((u:any)=>[u.id,u.name])]}/>
-      <Field name="title" label="Título *" required placeholder="Ej. Busca depto 2 amb Palermo"/>
-      <Select name="priority" label="Prioridad" options={PRIORITIES as any}/>
-      <Field name="source" label="Origen" placeholder="Instagram, referido, web..."/><Field name="channel" label="Canal" placeholder="WhatsApp, teléfono..."/><Field name="score" label="Score" type="number"/><Field name="nextActionAt" label="Próxima acción" type="datetime-local"/>
-      <Field name="nextStep" label="Próximo paso"/><Field name="notes" label="Notas" className="md:col-span-3"/>
-      <div className="md:col-span-4 flex justify-end"><button disabled={isPending} className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">Guardar lead</button></div>
-    </form>}
-
-    <div className="overflow-x-auto pb-3">
-      <div className="grid grid-flow-col auto-cols-[290px] gap-3 min-w-max">
-        {PIPELINE.map(([status,label]) => {
-          const rows = leads.filter((lead:any)=>lead.status===status);
-          return <section key={status} className="bg-slate-100/80 border border-slate-200 rounded-xl p-3 min-h-[350px]">
-            <div className="flex justify-between items-center mb-3"><h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">{label}</h3><span className="text-[11px] px-2 py-0.5 bg-white rounded-full border">{rows.length}</span></div>
-            <div className="space-y-2">{rows.map((lead:any)=><button key={lead.id} onClick={()=>{setSelectedLead(lead);setMatches([])}} className="w-full text-left bg-white border border-slate-200 rounded-lg p-3 hover:border-indigo-300 shadow-xs">
-              <div className="flex justify-between gap-2"><p className="font-semibold text-sm text-slate-900">{lead.title}</p><span className={`text-[10px] font-bold ${lead.priority==='URGENT'?'text-rose-600':lead.priority==='HIGH'?'text-amber-600':'text-slate-400'}`}>{lead.priority}</span></div>
-              <p className="text-xs text-slate-500 mt-1">{lead.contact.firstName} {lead.contact.lastName}</p>
-              <p className="text-[11px] text-slate-400 mt-1">{lead.agent?.name || 'Sin agente'} · {lead.source || 'Sin origen'}</p>
-            </button>)}</div>
-          </section>;
-        })}
-      </div>
+    <div className="ui-kanban">
+      {PIPELINE.map(([status,label]) => {
+        const rows = leads.filter((lead:any)=>lead.status===status);
+        return <section key={status} className="ui-kanban-column">
+          <div className="ui-kanban-column__head"><h3>{label}</h3><span className="ui-kanban-column__count">{rows.length}</span></div>
+          {rows.length===0 ? <div className="py-6 text-center text-[10px] text-slate-400">Sin leads</div> : rows.map((lead:any)=><button key={lead.id} onClick={()=>openLead(lead)} className="ui-kanban-card">
+            <div className="flex justify-between gap-2"><h4>{lead.title}</h4><span className={`text-[9px] font-bold ${lead.priority==='URGENT'?'text-rose-600':lead.priority==='HIGH'?'text-amber-600':'text-slate-400'}`}>{lead.priority}</span></div>
+            <p>{lead.contact.firstName} {lead.contact.lastName}</p>
+            <p>{lead.agent?.name || 'Sin agente'} · {lead.source || 'Sin origen'}</p>
+          </button>)}
+        </section>;
+      })}
     </div>
 
-    {selectedLead && <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-5">
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-3"><div><h2 className="text-lg font-bold text-slate-900">{selectedLead.title}</h2><p className="text-sm text-slate-500">{selectedLead.contact.firstName} {selectedLead.contact.lastName} · {selectedLead.contact.phone || selectedLead.contact.email || 'sin contacto'}</p></div><div className="flex flex-wrap gap-2"><button onClick={()=>setShowInteraction(v=>!v)} className="btn"><MessageSquarePlus className="w-4 h-4"/>Interacción</button><button onClick={()=>setShowDemand(v=>!v)} className="btn"><Target className="w-4 h-4"/>Demanda</button></div></div>
-      <div className="flex flex-wrap gap-1.5">{PIPELINE.map(([s,l])=><button key={s} disabled={isPending||s===selectedLead.status} onClick={()=>run(()=>moveLeadAction(selectedLead.id,s as any),()=>window.location.reload())} className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${s===selectedLead.status?'bg-indigo-600 text-white border-indigo-600':'bg-white text-slate-600 border-slate-200'}`}>{l}</button>)}</div>
-      {showInteraction && <form onSubmit={submitInteraction} className="grid md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-lg"><Select name="type" label="Tipo" options={[['CALL','Llamada'],['WHATSAPP','WhatsApp'],['EMAIL','Email'],['MEETING','Reunión'],['NOTE','Nota'],['OTHER','Otro']]}/><Field name="summary" label="Resumen *" required className="md:col-span-2"/><Field name="nextStep" label="Próximo paso"/><div className="md:col-span-4 flex justify-end"><button className="primary">Registrar</button></div></form>}
-      {showDemand && <form onSubmit={submitDemand} className="grid md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-lg"><Select name="operation" label="Operación" options={[['RENT','Alquiler'],['SALE','Venta'],['TEMPORARY_RENT','Temporal'],['MANAGEMENT','Administración']]}/><Select name="propertyType" label="Tipo" options={[['','Todos'],['DEPARTAMENTO','Departamento'],['CASA','Casa'],['LOCAL','Local'],['TERRENO','Terreno'],['OFICINA','Oficina'],['COCHERA','Cochera'],['OTRO','Otro']]}/><Field name="zones" label="Zonas" placeholder="Palermo, Belgrano"/><Field name="currency" label="Moneda" defaultValue="ARS"/><Field name="budgetMin" label="Presupuesto mín." type="number"/><Field name="budgetMax" label="Presupuesto máx." type="number"/><Field name="roomsMin" label="Ambientes mín." type="number"/><Field name="bedroomsMin" label="Dormitorios mín." type="number"/><Field name="sqmMin" label="m² mín." type="number"/><Field name="notes" label="Notas" className="md:col-span-3"/><div className="md:col-span-4 flex justify-end"><button className="primary">Guardar demanda</button></div></form>}
+    <Drawer open={showLeadForm} onClose={()=>setShowLeadForm(false)} title="Nuevo lead" subtitle="Registrá lo esencial. El seguimiento y la demanda se completan desde la ficha del lead." width="wide">
+      <form onSubmit={submitLead}>
+        <FormSection title="Identificación" description="Persona, responsable y prioridad comercial.">
+          <Select name="contactId" label="Contacto *" required options={data.contacts.map((c:any)=>[c.id, `${c.firstName} ${c.lastName}`])}/>
+          <Select name="agentId" label="Agente" options={[['','Sin asignar'],...data.users.map((u:any)=>[u.id,u.name])]}/>
+          <Field name="title" label="Título *" required placeholder="Ej. Busca depto 2 amb Palermo"/>
+          <Select name="priority" label="Prioridad" options={PRIORITIES as any}/>
+        </FormSection>
+        <FormSection title="Origen y próximo paso">
+          <Field name="source" label="Origen" placeholder="Instagram, referido, web..."/>
+          <Field name="channel" label="Canal" placeholder="WhatsApp, teléfono..."/>
+          <Field name="score" label="Score" type="number"/>
+          <Field name="nextActionAt" label="Próxima acción" type="datetime-local"/>
+          <Field name="nextStep" label="Próximo paso"/>
+          <Field name="notes" label="Notas"/>
+        </FormSection>
+        <div className="ui-form-actions"><button type="button" onClick={()=>setShowLeadForm(false)} className="btn-secondary">Cancelar</button><button disabled={isPending} className="btn-primary">Guardar lead</button></div>
+      </form>
+    </Drawer>
 
-      <div className="grid lg:grid-cols-2 gap-5">
-        <div><h3 className="text-sm font-bold mb-2">Últimas interacciones</h3><div className="space-y-2">{selectedLead.interactions.length?selectedLead.interactions.map((i:any)=><div key={i.id} className="p-3 border rounded-lg"><div className="text-[10px] font-bold text-indigo-600">{i.type}</div><p className="text-sm mt-1">{i.summary}</p></div>):<p className="text-xs text-slate-400">Sin interacciones.</p>}</div></div>
-        <div><h3 className="text-sm font-bold mb-2">Demandas activas</h3><div className="space-y-2">{selectedLead.demands.length?selectedLead.demands.map((d:any)=><div key={d.id} className="p-3 border rounded-lg flex justify-between gap-3"><div><p className="text-sm font-semibold">{d.operation} · {d.propertyType || 'Cualquier tipo'}</p><p className="text-xs text-slate-500">{d.budgetMax?`Hasta ${formatCurrency(d.budgetMax,d.currency)}`:'Sin tope'} </p></div><button onClick={()=>loadMatches(d.id)} className="text-xs font-semibold text-indigo-600">Buscar match</button></div>):<p className="text-xs text-slate-400">Sin demandas.</p>}</div></div>
-      </div>
+    <Drawer open={!!selectedLead} onClose={()=>setSelectedLead(null)} title={selectedLead?.title || 'Lead'} subtitle={selectedLead ? `${selectedLead.contact.firstName} ${selectedLead.contact.lastName} · ${selectedLead.contact.phone || selectedLead.contact.email || 'sin contacto'}` : ''} width="wide">
+      {selectedLead && <div className="space-y-5">
+        <WorkspaceTabs>
+          <WorkspaceTab active={detailTab==='SUMMARY'} onClick={()=>setDetailTab('SUMMARY')}>Resumen</WorkspaceTab>
+          <WorkspaceTab active={detailTab==='INTERACTION'} onClick={()=>setDetailTab('INTERACTION')}><MessageSquarePlus className="inline w-3.5 h-3.5 mr-1"/>Interacción</WorkspaceTab>
+          <WorkspaceTab active={detailTab==='DEMAND'} onClick={()=>setDetailTab('DEMAND')}><Target className="inline w-3.5 h-3.5 mr-1"/>Demanda</WorkspaceTab>
+        </WorkspaceTabs>
 
-      {matches.length>0 && <div><h3 className="text-sm font-bold mb-2">Matching sugerido</h3><div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">{matches.map((m:any)=><div key={m.id} className="border rounded-lg p-3"><div className="flex justify-between"><div><p className="font-semibold text-sm"><Building2 className="inline w-4 h-4 mr-1"/>{m.code}</p><p className="text-xs text-slate-500">{m.address}</p></div><span className="text-sm font-bold text-indigo-600">{m.score}%</span></div><p className="text-xs mt-2">{formatCurrency(m.price,m.currency)}</p><p className="text-[10px] text-slate-400 mt-1">{m.reasons.join(' · ')}</p><button onClick={()=>run(()=>recordPropertyInterestAction({leadId:selectedLead.id,propertyId:m.id,score:m.score,reasons:m.reasons,status:'SENT'}),()=>window.location.reload())} className="mt-3 text-xs font-semibold text-indigo-600 inline-flex items-center gap-1">Marcar enviada <ArrowRight className="w-3 h-3"/></button></div>)}</div></div>}
-    </div>}
-    <style jsx>{`.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:1px solid #e2e8f0;border-radius:.5rem;font-size:.75rem;font-weight:600}.primary{padding:.5rem 1rem;background:#4f46e5;color:white;border-radius:.5rem;font-size:.75rem;font-weight:600}`}</style>
+        <FormSection title="Etapa comercial" description="Mové el lead por el pipeline sin salir de la ficha.">
+          <div className="col-span-full flex flex-wrap gap-1.5">{PIPELINE.map(([s,l])=><button key={s} type="button" disabled={isPending||s===selectedLead.status} onClick={()=>run(()=>moveLeadAction(selectedLead.id,s as any),()=>window.location.reload())} className={`px-2.5 py-1.5 rounded-full text-[10px] font-semibold border ${s===selectedLead.status?'bg-indigo-600 text-white border-indigo-600':'bg-white text-slate-600 border-slate-200'}`}>{l}</button>)}</div>
+        </FormSection>
+
+        {detailTab==='INTERACTION' && <form onSubmit={submitInteraction}><FormSection title="Registrar interacción"><Select name="type" label="Tipo" options={[['CALL','Llamada'],['WHATSAPP','WhatsApp'],['EMAIL','Email'],['MEETING','Reunión'],['NOTE','Nota'],['OTHER','Otro']]}/><Field name="summary" label="Resumen *" required/><Field name="nextStep" label="Próximo paso"/></FormSection><div className="flex justify-end"><button className="btn-primary">Registrar interacción</button></div></form>}
+
+        {detailTab==='DEMAND' && <form onSubmit={submitDemand}><FormSection title="Demanda activa" description="Criterios de búsqueda para matching automático."><Select name="operation" label="Operación" options={[['RENT','Alquiler'],['SALE','Venta'],['TEMPORARY_RENT','Temporal'],['MANAGEMENT','Administración']]}/><Select name="propertyType" label="Tipo" options={[['','Todos'],['DEPARTAMENTO','Departamento'],['CASA','Casa'],['LOCAL','Local'],['TERRENO','Terreno'],['OFICINA','Oficina'],['COCHERA','Cochera'],['OTRO','Otro']]}/><Field name="zones" label="Zonas" placeholder="Palermo, Belgrano"/><Field name="currency" label="Moneda" defaultValue="ARS"/><Field name="budgetMin" label="Presupuesto mín." type="number"/><Field name="budgetMax" label="Presupuesto máx." type="number"/><Field name="roomsMin" label="Ambientes mín." type="number"/><Field name="bedroomsMin" label="Dormitorios mín." type="number"/><Field name="sqmMin" label="m² mín." type="number"/><Field name="notes" label="Notas"/></FormSection><div className="flex justify-end"><button className="btn-primary">Guardar demanda</button></div></form>}
+
+        {detailTab==='SUMMARY' && <>
+          <div className="grid lg:grid-cols-2 gap-4">
+            <section className="section-card"><div className="section-card__header"><div><h3 className="section-card__title">Últimas interacciones</h3><p className="section-card__subtitle">Actividad comercial reciente</p></div></div><div className="section-card__body space-y-2">{selectedLead.interactions.length?selectedLead.interactions.map((i:any)=><div key={i.id} className="p-3 border border-slate-100 rounded-lg"><div className="text-[9px] font-bold text-indigo-600">{i.type}</div><p className="text-xs mt-1 text-slate-700">{i.summary}</p></div>):<EmptyState title="Sin interacciones" />}</div></section>
+            <section className="section-card"><div className="section-card__header"><div><h3 className="section-card__title">Demandas activas</h3><p className="section-card__subtitle">Búsquedas vinculadas al lead</p></div></div><div className="section-card__body space-y-2">{selectedLead.demands.length?selectedLead.demands.map((d:any)=><div key={d.id} className="p-3 border border-slate-100 rounded-lg flex justify-between gap-3"><div><p className="text-xs font-semibold">{d.operation} · {d.propertyType || 'Cualquier tipo'}</p><p className="text-[10px] text-slate-500">{d.budgetMax?`Hasta ${formatCurrency(d.budgetMax,d.currency)}`:'Sin tope'}</p></div><button type="button" onClick={()=>loadMatches(d.id)} className="text-[10px] font-semibold text-indigo-600">Buscar match</button></div>):<EmptyState title="Sin demandas" />}</div></section>
+          </div>
+          {matches.length>0 && <section className="section-card"><div className="section-card__header"><div><h3 className="section-card__title">Matching sugerido</h3><p className="section-card__subtitle">Propiedades compatibles ordenadas por score</p></div></div><div className="section-card__body grid md:grid-cols-2 gap-3">{matches.map((m:any)=><div key={m.id} className="border border-slate-100 rounded-xl p-3"><div className="flex justify-between"><div><p className="font-semibold text-xs"><Building2 className="inline w-4 h-4 mr-1"/>{m.code}</p><p className="text-[10px] text-slate-500">{m.address}</p></div><span className="text-sm font-bold text-indigo-600">{m.score}%</span></div><p className="text-xs mt-2">{formatCurrency(m.price,m.currency)}</p><p className="text-[9px] text-slate-400 mt-1">{m.reasons.join(' · ')}</p><button type="button" onClick={()=>run(()=>recordPropertyInterestAction({leadId:selectedLead.id,propertyId:m.id,score:m.score,reasons:m.reasons,status:'SENT'}),()=>window.location.reload())} className="mt-3 text-[10px] font-semibold text-indigo-600 inline-flex items-center gap-1">Marcar enviada <ArrowRight className="w-3 h-3"/></button></div>)}</div></section>}
+        </>}
+      </div>}
+    </Drawer>
   </div>;
 }
 
-function Field({name,label,type='text',required,placeholder,defaultValue,className=''}:{name:string;label:string;type?:string;required?:boolean;placeholder?:string;defaultValue?:string;className?:string}){return <label className={className}><span className="block text-xs font-semibold text-slate-700 mb-1">{label}</span><input name={name} type={type} required={required} placeholder={placeholder} defaultValue={defaultValue} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"/></label>}
-function Select({name,label,options,required}:{name:string;label:string;options:any[];required?:boolean}){return <label><span className="block text-xs font-semibold text-slate-700 mb-1">{label}</span><select name={name} required={required} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">{options.map((o:any)=><option key={o[0]} value={o[0]}>{o[1]}</option>)}</select></label>}
+function Field({name,label,type='text',required,placeholder,defaultValue}:{name:string;label:string;type?:string;required?:boolean;placeholder?:string;defaultValue?:string}){return <label><span className="form-label">{label}</span><input name={name} type={type} required={required} placeholder={placeholder} defaultValue={defaultValue} className="form-input"/></label>}
+function Select({name,label,options,required}:{name:string;label:string;options:any[];required?:boolean}){return <label><span className="form-label">{label}</span><select name={name} required={required} className="form-input">{options.map((o:any)=><option key={o[0]} value={o[0]}>{o[1]}</option>)}</select></label>}
