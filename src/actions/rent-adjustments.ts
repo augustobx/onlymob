@@ -1,7 +1,15 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { platformPrisma } from '@/lib/prisma-core';
 import { requirePermission } from '@/lib/permissions';
+import { auditTenantAction } from '@/lib/tenant-guard';
+import {
+  applyScheduledRentAdjustments,
+  getAutomaticAdjustmentSettings,
+  leaseAutoSettingKey,
+  previewScheduledRentAdjustments,
+} from '@/lib/rent-adjustment-engine';
 
 function atNoon(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
@@ -77,6 +85,7 @@ export async function getRentAdjustmentScheduleAction() {
     orderBy: [{ nextAdjustmentDate: 'asc' }, { endDate: 'asc' }],
   });
 
+  const autoSettings = await getAutomaticAdjustmentSettings(tenant.id, leases.map((lease) => lease.id));
   const today = atNoon(new Date());
   const firstMonth = monthStart(today);
   const months = Array.from({ length: 6 }, (_, index) => {
@@ -114,6 +123,7 @@ export async function getRentAdjustmentScheduleAction() {
       updatePeriodMonths: lease.updatePeriodMonths,
       adjustmentMethod: lease.adjustmentMethod,
       adjustmentIndex: lease.adjustmentIndex,
+      autoAdjustmentEnabled: autoSettings.enabledLeaseIds.has(lease.id),
       contractEndDate: effectiveEndDate.toISOString(),
       status: lease.status,
       lastIncrease: lastIncrease
@@ -143,5 +153,90 @@ export async function getRentAdjustmentScheduleAction() {
     }
   }
 
-  return { overdue, months, items };
+  return { overdue, months, items, globalAutoEnabled: autoSettings.globalEnabled };
+}
+
+export async function previewRentAdjustmentBatchAction(leaseIds: string[], manualPercent?: number | null) {
+  const { tenant } = await requirePermission('leases', 'read');
+  return previewScheduledRentAdjustments({ tenantId: tenant.id, leaseIds, manualPercent });
+}
+
+export async function applyRentAdjustmentBatchAction(leaseIds: string[], manualPercent?: number | null) {
+  const { tenant, session } = await requirePermission('leases', 'update');
+  const result = await applyScheduledRentAdjustments({ tenantId: tenant.id, leaseIds, manualPercent });
+
+  for (const row of result.applied) {
+    await auditTenantAction({
+      tenantId: tenant.id,
+      actorUserId: session.userId,
+      action: 'LEASE_INCREASE_APPLIED',
+      entityType: 'PropertyLease',
+      entityId: row.leaseId,
+      metadata: {
+        propertyId: row.propertyId,
+        adjustmentMethod: row.adjustmentMethod,
+        oldRent: row.oldRent,
+        newRent: row.newRent,
+        percent: row.percent,
+        indexUsed: row.indexUsed,
+        nextAdjustmentDate: row.nextAdjustmentDate,
+        source: 'bulk-adjustments',
+      },
+    });
+    revalidatePath(`/propiedades/${row.propertyId}`);
+    revalidatePath(`/contratos/${row.leaseId}`);
+  }
+
+  revalidatePath('/aumentos');
+  revalidatePath('/contratos');
+  revalidatePath('/propiedades');
+  revalidatePath('/dashboard');
+
+  return {
+    appliedCount: result.applied.length,
+    skippedCount: result.skipped.length,
+    applied: result.applied,
+    skipped: result.skipped,
+  };
+}
+
+export async function setLeaseAutomaticAdjustmentAction(leaseId: string, enabled: boolean) {
+  const { tenant, session } = await requirePermission('leases', 'update');
+  const lease = await platformPrisma.propertyLease.findFirst({
+    where: { id: leaseId, tenantId: tenant.id },
+    select: {
+      id: true,
+      propertyId: true,
+      adjustmentMethod: true,
+      increasePercent: true,
+      status: true,
+    },
+  });
+  if (!lease) throw new Error('Contrato no encontrado.');
+  if (enabled && !['ICL', 'FIXED_PERCENT'].includes(lease.adjustmentMethod)) {
+    throw new Error('El aumento automático solo se puede activar para contratos ICL o porcentaje fijo.');
+  }
+  if (enabled && lease.adjustmentMethod === 'FIXED_PERCENT' && Number(lease.increasePercent || 0) <= 0) {
+    throw new Error('Configurá primero un porcentaje fijo válido en el contrato.');
+  }
+
+  await platformPrisma.tenantSetting.upsert({
+    where: { tenantId_key: { tenantId: tenant.id, key: leaseAutoSettingKey(lease.id) } },
+    update: { value: enabled ? 'true' : 'false' },
+    create: { tenantId: tenant.id, key: leaseAutoSettingKey(lease.id), value: enabled ? 'true' : 'false' },
+  });
+
+  await auditTenantAction({
+    tenantId: tenant.id,
+    actorUserId: session.userId,
+    action: enabled ? 'LEASE_AUTO_ADJUSTMENT_ENABLED' : 'LEASE_AUTO_ADJUSTMENT_DISABLED',
+    entityType: 'PropertyLease',
+    entityId: lease.id,
+    metadata: { propertyId: lease.propertyId, adjustmentMethod: lease.adjustmentMethod },
+  });
+
+  revalidatePath(`/contratos/${lease.id}`);
+  revalidatePath('/contratos');
+  revalidatePath('/aumentos');
+  return { success: true, enabled };
 }

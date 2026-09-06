@@ -85,6 +85,7 @@ export async function updatePropertyLeaseProfessionalAction(data: {
   startDate?: string | null;
   endDate?: string | null;
   deposit?: number;
+  increasePercent?: number;
   updatePeriodMonths?: number;
   guarantorContactId?: string | null;
   extensionUntil?: string | null;
@@ -126,6 +127,13 @@ export async function updatePropertyLeaseProfessionalAction(data: {
     throw new Error('La modalidad de ajuste no es válida.');
   }
   const adjustmentMethod = requestedMethod as AdjustmentMethodValue;
+  const increasePercent = data.increasePercent === undefined ? Number(lease.increasePercent) : Number(data.increasePercent);
+  if (!Number.isFinite(increasePercent) || increasePercent < 0 || increasePercent > 1000) {
+    throw new Error('El porcentaje de ajuste no es válido.');
+  }
+  if (adjustmentMethod === 'FIXED_PERCENT' && increasePercent <= 0) {
+    throw new Error('Para porcentaje fijo indicá un porcentaje mayor a cero.');
+  }
 
   let guarantorId = lease.guarantorContactId;
   if (data.guarantorContactId !== undefined) {
@@ -168,6 +176,7 @@ export async function updatePropertyLeaseProfessionalAction(data: {
         startDate,
         endDate,
         deposit,
+        increasePercent,
         updatePeriodMonths,
         guarantorContactId: guarantorId,
         extensionUntil,
@@ -198,6 +207,7 @@ export async function updatePropertyLeaseProfessionalAction(data: {
     metadata: {
       propertyId: lease.propertyId,
       adjustmentMethod,
+      increasePercent,
       updatePeriodMonths,
       nextAdjustmentDate: nextAdjustmentDate?.toISOString() || null,
       status: data.status || lease.status,

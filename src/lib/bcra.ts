@@ -47,6 +47,14 @@ async function fetchOfficialRange(desde?: string, hasta?: string): Promise<Array
   }
 }
 
+export async function getOfficialICLSeries(fromValue: Date, toValue: Date): Promise<Array<{ fecha: string; valor: number }>> {
+  const from = new Date(fromValue);
+  const to = new Date(toValue);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) return [];
+  from.setDate(from.getDate() - 20);
+  return fetchOfficialRange(isoDate(from), isoDate(to));
+}
+
 export async function fetchICLFromAPI(): Promise<ICLData | null> {
   try {
     const customLatestUrl = process.env.BCRA_API_URL;

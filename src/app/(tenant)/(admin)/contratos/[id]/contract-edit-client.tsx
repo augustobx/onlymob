@@ -13,6 +13,7 @@ type LeaseEditData = {
   extensionUntil?: string | Date | null;
   currentRent: number;
   deposit: number;
+  increasePercent: number;
   updatePeriodMonths: number;
   adjustmentMethod?: string | null;
   adjustmentIndex?: string | null;
@@ -52,6 +53,7 @@ export function ContractEditClient({ lease }: { lease: LeaseEditData }) {
           endDate: String(form.get('endDate') || ''),
           extensionUntil: String(form.get('extensionUntil') || '') || null,
           deposit: Number(form.get('deposit') || 0),
+          increasePercent: method === 'FIXED_PERCENT' ? Number(form.get('increasePercent') || 0) : lease.increasePercent,
           updatePeriodMonths: Number(form.get('updatePeriodMonths') || 4),
           adjustmentMethod: method,
           adjustmentIndex: method === 'ICL'
@@ -142,17 +144,20 @@ export function ContractEditClient({ lease }: { lease: LeaseEditData }) {
                   </label>
 
                   <Field label="Próximo aumento" name="nextAdjustmentDate" type="date" defaultValue={dateInput(lease.nextAdjustmentDate)} />
-                  {!['ICL', 'MANUAL'].includes(method) && (
+                  {method === 'FIXED_PERCENT' && <Field label="Porcentaje fijo (%)" name="increasePercent" type="number" step="0.01" min="0.01" defaultValue={String(lease.increasePercent || '')} required />}
+                  {!['ICL', 'MANUAL', 'FIXED_PERCENT'].includes(method) && (
                     <Field label="Índice / referencia" name="adjustmentIndex" defaultValue={lease.adjustmentIndex || ''} placeholder="IPC, cláusula, referencia..." />
                   )}
                 </div>
 
                 <div className="mt-4 rounded-xl bg-white/80 p-3 text-xs text-amber-900">
                   {method === 'ICL'
-                    ? 'ICL / BCRA: al aplicar el aumento, OnlyMob toma el ICL oficial de la fecha base y el último disponible y calcula automáticamente el nuevo alquiler.'
+                    ? 'ICL / BCRA: al aplicar el aumento, OnlyMob toma la serie oficial correspondiente a la fecha contractual y calcula automáticamente el nuevo alquiler.'
                     : method === 'MANUAL'
                       ? 'Manual: al aplicar el aumento vas a poder ingresar el nuevo alquiler o un porcentaje.'
-                      : `${adjustmentMethodLabel(method)}: queda registrada como regla contractual y el aumento se confirma manualmente.`}
+                      : method === 'FIXED_PERCENT'
+                        ? 'Porcentaje fijo: guardá el porcentaje contractual. Puede aplicarse automáticamente si habilitás el switch del contrato y el interruptor general.'
+                        : `${adjustmentMethodLabel(method)}: queda registrada como regla contractual y el aumento se confirma manualmente.`}
                 </div>
               </section>
 

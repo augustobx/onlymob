@@ -205,6 +205,71 @@ export async function getReceiptDetailsAction(paymentId: string) {
   };
 }
 
+export async function getMonthlyReceiptsAction(period: string) {
+  const { tenant } = await requirePermission('collections', 'read');
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) throw new Error('Mes inválido.');
+
+  const [year, month] = period.split('-').map(Number);
+  const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
+  const end = new Date(year, month, 1, 0, 0, 0, 0);
+  const payments = await platformPrisma.payment.findMany({
+    where: { tenantId: tenant.id, paidAt: { gte: start, lt: end } },
+    include: {
+      debt: {
+        include: {
+          renter: true,
+          propertyLease: { include: { property: true } },
+          garageLease: {
+            include: { spaces: { include: { space: { include: { garage: true } } } } },
+          },
+        },
+      },
+    },
+    orderBy: [{ paidAt: 'asc' }, { receiptNumber: 'asc' }],
+  });
+
+  const receipts = payments.map((payment) => {
+    const amount = Number(payment.amount);
+    const property = payment.debt.propertyLease?.property || null;
+    const garageSpaces = payment.debt.garageLease?.spaces || [];
+    const garage = garageSpaces[0]?.space.garage || null;
+    const unitParts = property ? [property.floor, property.unit].filter(Boolean) : [];
+    const unitLabel = property
+      ? (unitParts.length ? unitParts.join(' ') : property.code)
+      : garageSpaces.length
+        ? garageSpaces.map((item) => item.space.spaceNumber).join(', ')
+        : '—';
+
+    return {
+      id: payment.id,
+      receiptNumber: payment.receiptNumber || 'SIN-NUMERO',
+      paymentDate: payment.paidAt,
+      paymentMonth: period,
+      amount,
+      amountWords: numberToWords(amount),
+      method: payment.method,
+      concept: payment.debt.description,
+      address: property?.address || garage?.address || tenant.address || 'Inmueble administrado',
+      unitLabel,
+      propertyCode: property?.code || null,
+      renterName: `${payment.debt.renter.firstName} ${payment.debt.renter.lastName}`.trim(),
+      renterDni: payment.debt.renter.dni,
+    };
+  }).sort((a, b) => a.address.localeCompare(b.address, 'es') || a.unitLabel.localeCompare(b.unitLabel, 'es'));
+
+  return {
+    period,
+    tenant: {
+      name: tenant.name,
+      receiptHeader: tenant.receiptHeader || tenant.name,
+      address: tenant.address,
+      phone: tenant.phone,
+      cuit: tenant.cuit,
+    },
+    receipts,
+  };
+}
+
 export async function getDashboardMetricsAction() {
   const { tenant } = await requirePermission('dashboard', 'read');
   const now = new Date();
