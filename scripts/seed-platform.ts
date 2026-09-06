@@ -39,7 +39,7 @@ async function seed() {
     { code:'INMOBILIARIA_ENTERPRISE',name:'Plan Enterprise',description:'Operación ampliada, múltiples usuarios y soporte prioritario',priceMonthly:85000,priceYearly:850000,maxProperties:1000,maxGarages:200,maxUsers:20,maxPublications:1000 },
   ];
   for (const planData of plans) {
-    const plan = await platformPrisma.plan.upsert({ where: { code: planData.code }, update: planData, create: planData });
+    const plan = await platformPrisma.plan.upsert({ where: { code: planData.code }, update: {}, create: planData });
     for (const featureKey of SAAS_FEATURE_KEYS) {
       await platformPrisma.planFeature.upsert({
         where: { planId_featureKey: { planId: plan.id, featureKey } },
