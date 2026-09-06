@@ -27,7 +27,7 @@ export async function getTenantPrisma() {
       contact: { $allOperations: scoped },
       property: { $allOperations: tenantOperation(tenant.id, 'properties') },
       propertyOwner: { $allOperations: scoped },
-      garage: { $allOperations: scoped },
+      garage: { $allOperations: tenantOperation(tenant.id, 'garages') },
       propertyLease: { $allOperations: scoped },
       garageLease: { $allOperations: scoped },
       debt: { $allOperations: scoped },
