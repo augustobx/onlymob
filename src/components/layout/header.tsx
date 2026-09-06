@@ -14,7 +14,10 @@ export async function Header({ title, subtitle, actionButton }: HeaderProps) {
   const icl = await getLatestICL();
 
   return (
-    <header className="app-header">
+    <header
+      className="app-header"
+      style={{ backdropFilter: 'none', WebkitBackdropFilter: 'none' }}
+    >
       <div className="app-header__title">
         <p className="app-header__eyebrow">OnlyMob Workspace</p>
         <h1>{title}</h1>
