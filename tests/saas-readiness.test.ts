@@ -45,8 +45,8 @@ test('disabled admin modules disappear from navigation while page guards remain 
   assert.ok(sidebar.includes("feature:'analytics'"));
   assert.ok(sidebar.includes("feature:'integrations'"));
   assert.ok(mobile.includes("feature:'analytics'"));
-  assert.ok(analytics.includes("isTenantFeatureEnabled(tenant.id, 'analytics'"));
-  assert.ok(integrations.includes("isTenantFeatureEnabled(tenant.id, 'integrations'"));
+  assert.ok(analytics.includes("isTenantFeatureEnabled(tenant.id,'analytics'"));
+  assert.ok(integrations.includes("isTenantFeatureEnabled(tenant.id,'integrations'"));
 });
 
 test('portal and automation feature switches are enforced beyond the SuperAdmin UI', () => {
