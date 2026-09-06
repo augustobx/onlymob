@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Save, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Save, CheckCircle2, AlertCircle, Zap } from 'lucide-react';
 import { saveTenantSettingsAction } from '@/actions/settings';
 
 export function SettingsForm({
   tenant,
   massSend,
+  autoRentAdjustments,
 }: {
   tenant: {
     name: string;
@@ -16,6 +17,7 @@ export function SettingsForm({
     cuit?: string | null;
   };
   massSend: boolean;
+  autoRentAdjustments: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState(false);
@@ -36,6 +38,7 @@ export function SettingsForm({
           phone: String(formData.get('phone') || ''),
           cuit: String(formData.get('cuit') || ''),
           massSend: formData.get('massSend') === 'on',
+          autoRentAdjustments: formData.get('autoRentAdjustments') === 'on',
         });
         setSuccess(true);
       } catch (err: any) {
@@ -96,10 +99,33 @@ export function SettingsForm({
             <input type="checkbox" name="massSend" defaultChecked={massSend} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300" />
             <div>
               <span className="text-xs font-bold text-slate-800 block">Notificaciones automáticas</span>
-              <span className="text-[11px] text-slate-500">Deja habilitada la preferencia del tenant para avisos automáticos futuros.</span>
+              <span className="text-[11px] text-slate-500">Habilita los avisos automáticos generados por las rutinas del sistema.</span>
             </div>
           </label>
         </div>
+
+        <section id="aumentos-automaticos" className="scroll-mt-28 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
+          <div className="mb-3 flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+              <Zap className="h-4 w-4" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-indigo-950">Aumentos automáticos</h4>
+              <p className="mt-1 text-[11px] leading-relaxed text-indigo-800">
+                Este es el interruptor general. Para que un contrato se actualice solo también debe tener activada su opción individual.
+              </p>
+            </div>
+          </div>
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-indigo-100 bg-white p-3">
+            <input type="checkbox" name="autoRentAdjustments" defaultChecked={autoRentAdjustments} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+            <div>
+              <span className="block text-xs font-black text-slate-900">Aplicar automáticamente al llegar la fecha de aumento</span>
+              <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">
+                Solo se ejecutan contratos con fórmula determinística: ICL/BCRA o porcentaje fijo previamente configurado. Manual, IPC y otros métodos nunca se aplican solos.
+              </span>
+            </div>
+          </label>
+        </section>
       </div>
 
       <div className="pt-4 border-t border-slate-100 flex justify-end">
