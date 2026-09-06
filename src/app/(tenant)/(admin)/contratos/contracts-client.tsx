@@ -1,26 +1,16 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import {
-  FileText,
-  Plus,
-  TrendingUp,
-  Calendar,
-  Warehouse,
-  Home,
-  CheckCircle2,
-  AlertTriangle,
-  FileSpreadsheet,
-  Trash2,
-} from 'lucide-react';
+import { CheckCircle2, FileSpreadsheet, Home, Plus, TrendingUp, Warehouse } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { adjustmentMethodLabel } from '@/lib/lease-labels';
 import {
-  createPropertyLeaseAction,
-  createGarageLeaseAction,
-  terminateLeaseAction,
-  previewIncreaseAction,
   applyIncreaseAction,
+  createGarageLeaseAction,
+  createPropertyLeaseAction,
   generateMonthlyQuotasAction,
+  previewIncreaseAction,
+  terminateLeaseAction,
 } from '@/actions/leases';
 
 interface PropertyLeaseItem {
@@ -36,6 +26,9 @@ interface PropertyLeaseItem {
   deposit: number;
   increasePercent: number;
   updatePeriodMonths: number;
+  adjustmentMethod?: string | null;
+  adjustmentIndex?: string | null;
+  nextAdjustmentDate?: Date | null;
   status: string;
   pendingDebtTotal: number;
 }
@@ -55,24 +48,11 @@ interface GarageLeaseItem {
   pendingDebtTotal: number;
 }
 
-interface PropertyOption {
-  id: string;
-  code: string;
-  address: string;
-  baseRent: number | null;
-}
+interface PropertyOption { id: string; code: string; address: string; baseRent: number | null }
+interface RenterOption { id: string; fullName: string; dni: string }
+interface SpaceOption { id: string; spaceNumber: string; garageName: string }
 
-interface RenterOption {
-  id: string;
-  fullName: string;
-  dni: string;
-}
-
-interface SpaceOption {
-  id: string;
-  spaceNumber: string;
-  garageName: string;
-}
+type ContractType = 'PROPERTY' | 'GARAGE';
 
 export function ContractsClient({
   propertyLeases,
@@ -80,7 +60,6 @@ export function ContractsClient({
   properties,
   renters,
   availableSpaces,
-  currentIclValue,
 }: {
   propertyLeases: PropertyLeaseItem[];
   garageLeases: GarageLeaseItem[];
@@ -91,643 +70,154 @@ export function ContractsClient({
 }) {
   const [activeTab, setActiveTab] = useState<'PROPERTIES' | 'GARAGES'>('PROPERTIES');
   const [isPending, startTransition] = useTransition();
-
-  // Modals
   const [isNewContractOpen, setIsNewContractOpen] = useState(false);
   const [isIncreaseOpen, setIsIncreaseOpen] = useState(false);
   const [isQuotaOpen, setIsQuotaOpen] = useState(false);
+  const [newContractType, setNewContractType] = useState<ContractType>('PROPERTY');
+  const [actionError, setActionError] = useState('');
 
-  // Increase Simulator State
-  const [selectedPeriod, setSelectedPeriod] = useState<number>(4);
-  const [increasePercent, setIncreasePercent] = useState<number>(15.5);
+  const [selectedPeriod, setSelectedPeriod] = useState(4);
+  const [increasePercent, setIncreasePercent] = useState(15);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
 
-  // Quota Modal State
   const currentMonth = new Date().toISOString().slice(0, 7);
   const [quotaPeriod, setQuotaPeriod] = useState(currentMonth);
   const [quotaDueDay, setQuotaDueDay] = useState(10);
   const [quotaMessage, setQuotaMessage] = useState('');
 
-  // Simular aumento
-  const handleSimulateIncrease = async () => {
+  function run(task: () => Promise<void>) {
+    setActionError('');
     startTransition(async () => {
-      const rows = await previewIncreaseAction(selectedPeriod, increasePercent);
-      setPreviewRows(rows);
+      try { await task(); }
+      catch (error) { setActionError(error instanceof Error ? error.message : 'No se pudo completar la operación.'); }
     });
-  };
+  }
 
-  const handleApplyIncrease = async () => {
-    if (!confirm(`¿Confirmás aplicar un aumento del ${increasePercent}% a los contratos seleccionados?`)) return;
-    startTransition(async () => {
-      await applyIncreaseAction(selectedPeriod, increasePercent, `Aumento ICL / Período ${selectedPeriod}m`);
+  const handleSimulateIncrease = () => run(async () => {
+    const rows = await previewIncreaseAction(selectedPeriod, increasePercent);
+    setPreviewRows(rows);
+  });
+
+  const handleApplyIncrease = () => {
+    if (!confirm(`¿Confirmás aplicar un aumento manual del ${increasePercent}% a ${previewRows.length} contrato/s? Los contratos ICL no se incluyen.`)) return;
+    run(async () => {
+      await applyIncreaseAction(selectedPeriod, increasePercent, `Ajuste manual ${increasePercent}%`);
       setIsIncreaseOpen(false);
       window.location.reload();
     });
   };
 
-  // Generar cuotas
-  const handleGenerateQuotas = async (e: React.FormEvent) => {
-    e.preventDefault();
-    startTransition(async () => {
-      const res = await generateMonthlyQuotasAction(quotaPeriod, quotaDueDay);
-      setQuotaMessage(`¡Se generaron ${res.createdCount} cuotas correctamente para el período ${quotaPeriod}!`);
-      setTimeout(() => {
-        setIsQuotaOpen(false);
-        setQuotaMessage('');
-        window.location.reload();
-      }, 1500);
+  const handleGenerateQuotas = (event: React.FormEvent) => {
+    event.preventDefault();
+    run(async () => {
+      const result = await generateMonthlyQuotasAction(quotaPeriod, quotaDueDay);
+      setQuotaMessage(`Se generaron ${result.createdCount} cuotas para ${quotaPeriod}.`);
+      setTimeout(() => window.location.reload(), 900);
     });
   };
 
-  // Finalizar contrato
-  const handleTerminate = async (id: string, type: 'PROPERTY' | 'GARAGE') => {
+  const handleTerminate = (id: string, type: ContractType) => {
     if (!confirm('¿Seguro que deseás dar por terminado este contrato?')) return;
-    startTransition(async () => {
-      await terminateLeaseAction(id, type);
+    run(async () => { await terminateLeaseAction(id, type); window.location.reload(); });
+  };
+
+  const handleCreateContract = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    run(async () => {
+      if (newContractType === 'PROPERTY') {
+        await createPropertyLeaseAction({
+          propertyId: String(formData.get('propertyId') || ''),
+          renterId: String(formData.get('renterId') || ''),
+          startDate: String(formData.get('startDate') || ''),
+          endDate: String(formData.get('endDate') || ''),
+          rent: Number(formData.get('rent')),
+          deposit: Number(formData.get('deposit') || 0),
+          updatePeriodMonths: Number(formData.get('updatePeriodMonths') || 4),
+          adjustmentMethod: String(formData.get('adjustmentMethod') || 'ICL'),
+          adjustmentIndex: String(formData.get('adjustmentMethod') || 'ICL') === 'ICL' ? 'ICL' : null,
+          notes: String(formData.get('notes') || '') || undefined,
+        });
+      } else {
+        await createGarageLeaseAction({
+          renterId: String(formData.get('renterId') || ''),
+          spaceIds: formData.getAll('spaceIds').map(String),
+          startDate: String(formData.get('startDate') || ''),
+          endDate: String(formData.get('endDate') || ''),
+          rentPerSpace: Number(formData.get('rentPerSpace') || 0),
+          totalRent: Number(formData.get('totalRent') || 0),
+          deposit: Number(formData.get('deposit') || 0),
+          notes: String(formData.get('notes') || '') || undefined,
+        });
+      }
+      setIsNewContractOpen(false);
       window.location.reload();
     });
   };
 
-  // Crear nuevo contrato
-  const handleCreateContract = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const contractType = formData.get('contractType') as string;
-
-    if (contractType === 'PROPERTY') {
-      const data = {
-        propertyId: formData.get('propertyId') as string,
-        renterId: formData.get('renterId') as string,
-        startDate: formData.get('startDate') as string,
-        endDate: formData.get('endDate') as string,
-        rent: parseFloat(formData.get('rent') as string),
-        deposit: parseFloat(formData.get('deposit') as string || '0'),
-        updatePeriodMonths: parseInt(formData.get('updatePeriodMonths') as string, 10),
-      };
-
-      startTransition(async () => {
-        await createPropertyLeaseAction(data);
-        setIsNewContractOpen(false);
-        window.location.reload();
-      });
-    } else {
-      const selectedSpaces = formData.getAll('spaceIds') as string[];
-      const data = {
-        renterId: formData.get('renterId') as string,
-        spaceIds: selectedSpaces,
-        startDate: formData.get('startDate') as string,
-        endDate: formData.get('endDate') as string,
-        rentPerSpace: parseFloat(formData.get('rentPerSpace') as string || '0'),
-        totalRent: parseFloat(formData.get('totalRent') as string),
-        deposit: parseFloat(formData.get('deposit') as string || '0'),
-      };
-
-      startTransition(async () => {
-        await createGarageLeaseAction(data);
-        setIsNewContractOpen(false);
-        window.location.reload();
-      });
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* Action Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-        {/* Tabs */}
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg w-full md:w-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('PROPERTIES')}
-            className={`flex-1 md:flex-none px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-              activeTab === 'PROPERTIES'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Home className="w-3.5 h-3.5" />
-            <span>Inmuebles ({propertyLeases.length})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('GARAGES')}
-            className={`flex-1 md:flex-none px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-              activeTab === 'GARAGES'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Warehouse className="w-3.5 h-3.5" />
-            <span>Cocheras ({garageLeases.length})</span>
-          </button>
+      {actionError && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{actionError}</div>}
+
+      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-xs md:flex-row md:items-center md:justify-between">
+        <div className="flex w-full items-center gap-2 rounded-lg bg-slate-100 p-1 md:w-auto">
+          <button type="button" onClick={() => setActiveTab('PROPERTIES')} className={`flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-xs font-bold md:flex-none ${activeTab === 'PROPERTIES' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}><Home className="h-3.5 w-3.5" /> Inmuebles ({propertyLeases.length})</button>
+          <button type="button" onClick={() => setActiveTab('GARAGES')} className={`flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-xs font-bold md:flex-none ${activeTab === 'GARAGES' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}><Warehouse className="h-3.5 w-3.5" /> Cocheras ({garageLeases.length})</button>
         </div>
-
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-end">
-          <button
-            type="button"
-            onClick={() => setIsNewContractOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Nuevo Contrato</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setIsIncreaseOpen(true);
-              handleSimulateIncrease();
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>Aumento IPC/ICL</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsQuotaOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Generar Cuotas</span>
-          </button>
+        <div className="flex w-full flex-wrap justify-end gap-2.5 md:w-auto">
+          <button type="button" onClick={() => { setActionError(''); setNewContractType('PROPERTY'); setIsNewContractOpen(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-indigo-700"><Plus className="h-3.5 w-3.5" /> Nuevo contrato</button>
+          <button type="button" onClick={() => { setActionError(''); setPreviewRows([]); setIsIncreaseOpen(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-amber-600"><TrendingUp className="h-3.5 w-3.5" /> Aumento manual masivo</button>
+          <button type="button" onClick={() => { setActionError(''); setIsQuotaOpen(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700"><FileSpreadsheet className="h-3.5 w-3.5" /> Generar cuotas</button>
         </div>
       </div>
 
-      {/* Property Leases Table */}
       {activeTab === 'PROPERTIES' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="px-5 py-3">Inmueble</th>
-                  <th className="px-5 py-3">Inquilino</th>
-                  <th className="px-5 py-3">Vigencia</th>
-                  <th className="px-5 py-3">Alquiler Actual</th>
-                  <th className="px-5 py-3">Ajuste Cada</th>
-                  <th className="px-5 py-3">Estado</th>
-                  <th className="px-5 py-3 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {propertyLeases.map((l) => (
-                  <tr key={l.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-5 py-3.5">
-                      <span className="font-mono font-bold text-slate-900 block text-sm">
-                        {l.propertyCode}
-                      </span>
-                      <span className="text-[11px] text-slate-500 truncate max-w-[180px] block">
-                        {l.propertyAddress}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 font-medium text-slate-800">
-                      {l.renterName}
-                    </td>
-                    <td className="px-5 py-3.5 text-slate-600">
-                      {formatDate(l.startDate)} al {formatDate(l.endDate)}
-                    </td>
-                    <td className="px-5 py-3.5 font-mono font-extrabold text-sm text-slate-900">
-                      {formatCurrency(l.currentRent)}
-                    </td>
-                    <td className="px-5 py-3.5 font-semibold text-indigo-600">
-                      {l.updatePeriodMonths} meses
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          l.status === 'CURRENT'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {l.status === 'CURRENT' ? 'Vigente' : 'Terminado'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      {l.status === 'CURRENT' && (
-                        <button
-                          type="button"
-                          onClick={() => handleTerminate(l.id, 'PROPERTY')}
-                          className="px-2.5 py-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-md font-semibold transition-colors"
-                        >
-                          Finalizar
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+          <div className="overflow-x-auto"><table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-600"><tr><th className="px-5 py-3">Inmueble</th><th className="px-5 py-3">Inquilino</th><th className="px-5 py-3">Vigencia</th><th className="px-5 py-3">Alquiler</th><th className="px-5 py-3">Ajuste</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3 text-right">Acciones</th></tr></thead>
+            <tbody className="divide-y divide-slate-100">{propertyLeases.map((lease) => <tr key={lease.id} className="hover:bg-slate-50/70">
+              <td className="px-5 py-3.5"><span className="block font-mono text-sm font-bold text-slate-900">{lease.propertyCode}</span><span className="block max-w-[220px] truncate text-[11px] text-slate-500">{lease.propertyAddress}</span></td>
+              <td className="px-5 py-3.5 font-medium text-slate-800">{lease.renterName}</td>
+              <td className="px-5 py-3.5 text-slate-600">{formatDate(lease.startDate)} al {formatDate(lease.endDate)}</td>
+              <td className="px-5 py-3.5 font-mono text-sm font-extrabold text-slate-900">{formatCurrency(lease.currentRent)}</td>
+              <td className="px-5 py-3.5"><span className="block font-semibold text-indigo-700">{adjustmentMethodLabel(lease.adjustmentMethod)}</span><span className="text-[11px] text-slate-500">Cada {lease.updatePeriodMonths} meses</span></td>
+              <td className="px-5 py-3.5"><span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${['CURRENT','EXPIRING'].includes(lease.status) ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{lease.status === 'CURRENT' ? 'Vigente' : lease.status === 'EXPIRING' ? 'Por vencer' : 'Terminado'}</span></td>
+              <td className="px-5 py-3.5 text-right">{['CURRENT','EXPIRING'].includes(lease.status) && <button type="button" onClick={() => handleTerminate(lease.id, 'PROPERTY')} className="rounded-md px-2.5 py-1 font-semibold text-rose-600 hover:bg-rose-50">Finalizar</button>}</td>
+            </tr>)}</tbody>
+          </table></div>
         </div>
       )}
 
-      {/* Garage Leases Table */}
       {activeTab === 'GARAGES' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="px-5 py-3">Inquilino</th>
-                  <th className="px-5 py-3">Plazas Asignadas</th>
-                  <th className="px-5 py-3">Vigencia</th>
-                  <th className="px-5 py-3">Alquiler Total</th>
-                  <th className="px-5 py-3">Estado</th>
-                  <th className="px-5 py-3 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {garageLeases.map((gl) => (
-                  <tr key={gl.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-5 py-3.5 font-bold text-slate-800">
-                      {gl.renterName}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 font-mono font-bold px-2 py-0.5 rounded-md text-xs">
-                        {gl.spacesDescription}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-slate-600">
-                      {formatDate(gl.startDate)} al {formatDate(gl.endDate)}
-                    </td>
-                    <td className="px-5 py-3.5 font-mono font-extrabold text-sm text-slate-900">
-                      {formatCurrency(gl.totalRent)}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          gl.status === 'CURRENT'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {gl.status === 'CURRENT' ? 'Vigente' : 'Terminado'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      {gl.status === 'CURRENT' && (
-                        <button
-                          type="button"
-                          onClick={() => handleTerminate(gl.id, 'GARAGE')}
-                          className="px-2.5 py-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-md font-semibold transition-colors"
-                        >
-                          Finalizar
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+          <div className="overflow-x-auto"><table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-600"><tr><th className="px-5 py-3">Inquilino</th><th className="px-5 py-3">Plazas</th><th className="px-5 py-3">Vigencia</th><th className="px-5 py-3">Alquiler</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3 text-right">Acciones</th></tr></thead>
+            <tbody className="divide-y divide-slate-100">{garageLeases.map((lease) => <tr key={lease.id} className="hover:bg-slate-50/70">
+              <td className="px-5 py-3.5 font-bold text-slate-800">{lease.renterName}</td><td className="px-5 py-3.5"><span className="rounded-md bg-indigo-50 px-2 py-0.5 font-mono font-bold text-indigo-700">{lease.spacesDescription}</span></td><td className="px-5 py-3.5 text-slate-600">{formatDate(lease.startDate)} al {formatDate(lease.endDate)}</td><td className="px-5 py-3.5 font-mono text-sm font-extrabold">{formatCurrency(lease.totalRent)}</td><td className="px-5 py-3.5"><span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${lease.status === 'CURRENT' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{lease.status === 'CURRENT' ? 'Vigente' : 'Terminado'}</span></td><td className="px-5 py-3.5 text-right">{lease.status === 'CURRENT' && <button type="button" onClick={() => handleTerminate(lease.id, 'GARAGE')} className="rounded-md px-2.5 py-1 font-semibold text-rose-600 hover:bg-rose-50">Finalizar</button>}</td>
+            </tr>)}</tbody>
+          </table></div>
         </div>
       )}
 
-      {/* Modal: Aumento de Alquiler (Simulador & Aplicar) */}
-      {isIncreaseOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-amber-500" />
-                  <span>Actualización de Alquileres (ICL / IPC)</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Índice ICL oficial de referencia: <span className="font-bold text-indigo-600">{currentIclValue.toFixed(4)}</span>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsIncreaseOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
-              >
-                ✕
-              </button>
-            </div>
+      {isIncreaseOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs"><div className="max-h-[90vh] w-full max-w-2xl space-y-5 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <div className="border-b border-slate-100 pb-3"><h3 className="flex items-center gap-2 text-lg font-bold text-slate-900"><TrendingUp className="h-5 w-5 text-amber-500" /> Aumento manual masivo</h3><p className="mt-1 text-xs text-slate-500">Sólo incluye contratos configurados como <strong>Manual</strong> o <strong>Porcentaje fijo</strong>. Los contratos ICL se actualizan individualmente desde Propiedad 360/Contrato 360 usando el índice oficial.</p></div>
+        {actionError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{actionError}</div>}
+        <div className="grid gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-semibold text-slate-700">Frecuencia</label><select value={selectedPeriod} onChange={(e) => setSelectedPeriod(Number(e.target.value))} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><option value={3}>Cada 3 meses</option><option value={4}>Cada 4 meses</option><option value={6}>Cada 6 meses</option><option value={12}>Cada 12 meses</option><option value={0}>Todos los manuales vigentes</option></select></div><div><label className="mb-1 block text-xs font-semibold text-slate-700">Porcentaje (%)</label><div className="flex gap-2"><input type="number" min="0.01" max="1000" step="0.01" value={increasePercent} onChange={(e) => setIncreasePercent(Number(e.target.value))} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono"/><button type="button" onClick={handleSimulateIncrease} disabled={isPending || increasePercent <= 0} className="rounded-lg bg-slate-800 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Calcular</button></div></div></div>
+        <div><h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-700">Contratos afectados ({previewRows.length})</h4><div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200"><table className="w-full text-left text-xs"><thead className="sticky top-0 bg-slate-100"><tr><th className="px-3 py-2">Inmueble</th><th className="px-3 py-2">Inquilino</th><th className="px-3 py-2">Actual</th><th className="px-3 py-2">Nuevo</th></tr></thead><tbody className="divide-y divide-slate-100">{previewRows.map((row) => <tr key={row.leaseId}><td className="px-3 py-2 font-mono font-bold">{row.propertyCode}</td><td className="px-3 py-2">{row.renterName}</td><td className="px-3 py-2 font-mono">{formatCurrency(row.oldRent)}</td><td className="px-3 py-2 font-mono font-bold text-emerald-600">{formatCurrency(row.newRent)}</td></tr>)}</tbody></table></div></div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 pt-3"><button type="button" onClick={() => setIsIncreaseOpen(false)} className="rounded-lg bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700">Cancelar</button><button type="button" disabled={isPending || previewRows.length === 0} onClick={handleApplyIncrease} className="rounded-lg bg-amber-500 px-5 py-2 text-xs font-semibold text-white disabled:opacity-50">{isPending ? 'Aplicando...' : `Aplicar a ${previewRows.length} contrato/s`}</button></div>
+      </div></div>}
 
-            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Frecuencia de Ajuste
-                </label>
-                <select
-                  value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(parseInt(e.target.value, 10))}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900"
-                >
-                  <option value={3}>Cada 3 meses</option>
-                  <option value={4}>Cada 4 meses (Estándar)</option>
-                  <option value={6}>Cada 6 meses</option>
-                  <option value={12}>Cada 12 meses (Anual)</option>
-                  <option value={0}>Todos los contratos vigentes</option>
-                </select>
-              </div>
+      {isQuotaOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs"><div className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"><h3 className="flex items-center gap-2 text-lg font-bold text-slate-900"><FileSpreadsheet className="h-5 w-5 text-emerald-600" /> Generar cuotas mensuales</h3>{quotaMessage ? <div className="flex items-center gap-2 rounded-xl bg-emerald-50 p-4 text-xs font-semibold text-emerald-800"><CheckCircle2 className="h-4 w-4" />{quotaMessage}</div> : <form onSubmit={handleGenerateQuotas} className="space-y-4"><p className="text-xs text-slate-500">Genera las deudas mensuales de contratos vigentes sin duplicar conceptos ya existentes.</p><div><label className="mb-1 block text-xs font-semibold">Mes</label><input type="month" required value={quotaPeriod} onChange={(e) => setQuotaPeriod(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/></div><div><label className="mb-1 block text-xs font-semibold">Día de vencimiento</label><input type="number" min="1" max="28" required value={quotaDueDay} onChange={(e) => setQuotaDueDay(Number(e.target.value))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/></div><div className="flex justify-end gap-3 border-t pt-3"><button type="button" onClick={() => setIsQuotaOpen(false)} className="rounded-lg bg-slate-100 px-4 py-2 text-xs font-semibold">Cancelar</button><button disabled={isPending} className="rounded-lg bg-emerald-600 px-5 py-2 text-xs font-semibold text-white disabled:opacity-50">{isPending ? 'Generando...' : 'Confirmar y generar'}</button></div></form>}</div></div>}
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Porcentaje de Aumento (%)
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={increasePercent}
-                    onChange={(e) => setIncreasePercent(parseFloat(e.target.value) || 0)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-900"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSimulateIncrease}
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold"
-                  >
-                    Calcular
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Preview Table */}
-            <div>
-              <h4 className="text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">
-                Contratos Afectados ({previewRows.length})
-              </h4>
-              <div className="border border-slate-200 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-100 text-slate-600 font-semibold sticky top-0">
-                    <tr>
-                      <th className="px-3 py-2">Inmueble</th>
-                      <th className="px-3 py-2">Inquilino</th>
-                      <th className="px-3 py-2">Alquiler Actual</th>
-                      <th className="px-3 py-2">Nuevo Alquiler</th>
-                      <th className="px-3 py-2 text-right">Diferencia</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {previewRows.map((r) => (
-                      <tr key={r.leaseId}>
-                        <td className="px-3 py-2 font-mono font-bold">{r.propertyCode}</td>
-                        <td className="px-3 py-2">{r.renterName}</td>
-                        <td className="px-3 py-2 font-mono text-slate-500">{formatCurrency(r.oldRent)}</td>
-                        <td className="px-3 py-2 font-mono font-bold text-emerald-600">{formatCurrency(r.newRent)}</td>
-                        <td className="px-3 py-2 font-mono font-semibold text-right text-indigo-600">
-                          +{formatCurrency(r.diff)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsIncreaseOpen(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isPending || previewRows.length === 0}
-                onClick={handleApplyIncrease}
-                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-xs"
-              >
-                {isPending ? 'Aplicando...' : `Aplicar Aumento a ${previewRows.length} Contratos`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Generación Masiva de Cuotas */}
-      {isQuotaOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-              <span>Generar Cuotas Mensuales</span>
-            </h3>
-
-            {quotaMessage ? (
-              <div className="p-4 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>{quotaMessage}</span>
-              </div>
-            ) : (
-              <form onSubmit={handleGenerateQuotas} className="space-y-4">
-                <p className="text-xs text-slate-500">
-                  Esta acción generará automáticamente las deudas de alquiler correspondientes para todos los contratos de inmuebles y cocheras vigentes. No generará duplicados si ya existen.
-                </p>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Mes y Año de la Cuota *
-                  </label>
-                  <input
-                    type="month"
-                    required
-                    value={quotaPeriod}
-                    onChange={(e) => setQuotaPeriod(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Día de Vencimiento del Mes *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    required
-                    value={quotaDueDay}
-                    onChange={(e) => setQuotaDueDay(parseInt(e.target.value, 10))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 font-mono"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Por defecto: Día 10 del mes seleccionado.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setIsQuotaOpen(false)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isPending}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-xs"
-                  >
-                    {isPending ? 'Generando...' : 'Confirmar y Generar'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Nuevo Contrato */}
-      {isNewContractOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-slate-900">Crear Nuevo Contrato</h3>
-
-            <form onSubmit={handleCreateContract} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tipo de Contrato *
-                </label>
-                <select
-                  name="contractType"
-                  defaultValue="PROPERTY"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800"
-                >
-                  <option value="PROPERTY">Inmueble (Casa/Dpto/Local)</option>
-                  <option value="GARAGE">Cochera / Garaje</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Inmueble / Propiedad (Solo para Inmueble)
-                </label>
-                <select
-                  name="propertyId"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900"
-                >
-                  <option value="">Seleccionar Inmueble disponible...</option>
-                  {properties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.code} - {p.address}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Inquilino Titular *
-                </label>
-                <select
-                  name="renterId"
-                  required
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900"
-                >
-                  <option value="">Seleccionar Inquilino...</option>
-                  {renters.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.fullName} (DNI: {r.dni})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Fecha de Inicio *
-                  </label>
-                  <input
-                    name="startDate"
-                    type="date"
-                    required
-                    defaultValue={new Date().toISOString().slice(0, 10)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Fecha de Finalización *
-                  </label>
-                  <input
-                    name="endDate"
-                    type="date"
-                    required
-                    defaultValue={new Date(Date.now() + 365 * 24 * 60 * 60 * 1000 * 2)
-                      .toISOString()
-                      .slice(0, 10)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Alquiler Inicial ($) *
-                  </label>
-                  <input
-                    name="rent"
-                    type="number"
-                    step="100"
-                    required
-                    placeholder="Ej: 300000"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono text-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Depósito en Garantía ($)
-                  </label>
-                  <input
-                    name="deposit"
-                    type="number"
-                    step="100"
-                    defaultValue="0"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono text-slate-900"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Ajuste Escalonado (Meses)
-                </label>
-                <select
-                  name="updatePeriodMonths"
-                  defaultValue="4"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900"
-                >
-                  <option value="3">Cada 3 meses</option>
-                  <option value="4">Cada 4 meses (Recomendado)</option>
-                  <option value="6">Cada 6 meses</option>
-                  <option value="12">Cada 12 meses</option>
-                </select>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsNewContractOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-xs"
-                >
-                  {isPending ? 'Guardando...' : 'Crear Contrato'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {isNewContractOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs"><div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><div className="mb-5"><h3 className="text-lg font-bold text-slate-900">Crear nuevo contrato</h3><p className="mt-1 text-xs text-slate-500">Definí desde el alta cómo se actualizará el alquiler.</p></div>{actionError && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{actionError}</div>}<form onSubmit={handleCreateContract} className="space-y-4">
+        <div><label className="mb-1 block text-xs font-semibold text-slate-700">Tipo de contrato</label><select value={newContractType} onChange={(e) => setNewContractType(e.target.value as ContractType)} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold"><option value="PROPERTY">Inmueble</option><option value="GARAGE">Cochera / garaje</option></select></div>
+        {newContractType === 'PROPERTY' ? <div><label className="mb-1 block text-xs font-semibold text-slate-700">Propiedad *</label><select name="propertyId" required className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="">Seleccionar propiedad disponible...</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.code} · {property.address}</option>)}</select></div> : <div><label className="mb-2 block text-xs font-semibold text-slate-700">Plazas disponibles *</label><div className="max-h-40 space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-3">{availableSpaces.length ? availableSpaces.map((space) => <label key={space.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="spaceIds" value={space.id}/><span className="font-semibold">{space.garageName}</span><span className="text-slate-500">#{space.spaceNumber}</span></label>) : <p className="text-sm text-slate-500">No hay plazas libres.</p>}</div></div>}
+        <div><label className="mb-1 block text-xs font-semibold text-slate-700">Inquilino titular *</label><select name="renterId" required className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="">Seleccionar inquilino...</option>{renters.map((renter) => <option key={renter.id} value={renter.id}>{renter.fullName} · DNI {renter.dni}</option>)}</select></div>
+        <div className="grid gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-semibold">Inicio *</label><input name="startDate" type="date" required defaultValue={new Date().toISOString().slice(0,10)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/></div><div><label className="mb-1 block text-xs font-semibold">Finalización *</label><input name="endDate" type="date" required defaultValue={new Date(Date.now()+365*24*60*60*1000*2).toISOString().slice(0,10)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/></div></div>
+        {newContractType === 'PROPERTY' ? <><div className="grid gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-semibold">Alquiler inicial *</label><input name="rent" type="number" min="0.01" step="0.01" required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono"/></div><div><label className="mb-1 block text-xs font-semibold">Depósito</label><input name="deposit" type="number" min="0" step="0.01" defaultValue="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono"/></div></div><div className="grid gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-semibold">Modalidad de aumento *</label><select name="adjustmentMethod" defaultValue="ICL" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold"><option value="ICL">ICL / BCRA</option><option value="MANUAL">Manual</option></select><p className="mt-1 text-[11px] text-slate-500">ICL usa la serie oficial al momento de aplicar cada aumento.</p></div><div><label className="mb-1 block text-xs font-semibold">Frecuencia *</label><select name="updatePeriodMonths" defaultValue="4" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="3">Cada 3 meses</option><option value="4">Cada 4 meses</option><option value="6">Cada 6 meses</option><option value="12">Cada 12 meses</option></select></div></div></> : <><div className="grid gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-semibold">Alquiler por plaza *</label><input name="rentPerSpace" type="number" min="0" step="0.01" required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono"/></div><div><label className="mb-1 block text-xs font-semibold">Alquiler total *</label><input name="totalRent" type="number" min="0.01" step="0.01" required className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono"/></div></div><div><label className="mb-1 block text-xs font-semibold">Depósito</label><input name="deposit" type="number" min="0" step="0.01" defaultValue="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono"/></div></>}
+        <div><label className="mb-1 block text-xs font-semibold">Notas</label><textarea name="notes" rows={3} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/></div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 pt-4"><button type="button" onClick={() => setIsNewContractOpen(false)} className="rounded-lg bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700">Cancelar</button><button type="submit" disabled={isPending || (newContractType === 'GARAGE' && availableSpaces.length === 0)} className="rounded-lg bg-indigo-600 px-5 py-2 text-xs font-semibold text-white disabled:opacity-50">{isPending ? 'Guardando...' : 'Crear contrato'}</button></div>
+      </form></div></div>}
     </div>
   );
 }
