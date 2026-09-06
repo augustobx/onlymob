@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { hashPassword } from '@/lib/auth';
 import { getTenantPrisma } from '@/lib/prisma';
-import { auditTenantAction, requireTenantAdmin } from '@/lib/tenant-guard';
+import { auditTenantAction } from '@/lib/tenant-guard';
+import { requirePermission } from '@/lib/permissions';
 import { z } from 'zod';
 
 const RenterSchema = z.object({
@@ -18,126 +19,70 @@ const RenterSchema = z.object({
 });
 
 export async function getRentersAction(search?: string) {
-  const { tenant } = await requireTenantAdmin();
+  const { tenant } = await requirePermission('renters', 'read');
   const prisma = await getTenantPrisma();
   const where: any = { tenantId: tenant.id };
-
-  if (search) {
-    where.OR = [
-      { firstName: { contains: search } },
-      { lastName: { contains: search } },
-      { dni: { contains: search } },
-      { email: { contains: search } },
-    ];
-  }
+  if (search) where.OR = [{ firstName: { contains: search } }, { lastName: { contains: search } }, { dni: { contains: search } }, { email: { contains: search } }];
 
   const renters = await prisma.propertyRenter.findMany({
     where,
     include: {
-      propertyLeases: {
-        where: { status: 'CURRENT' },
-        include: { property: true },
-      },
+      propertyLeases: { where: { status: { in: ['CURRENT', 'EXPIRING'] } }, include: { property: true } },
       garageLeases: { where: { status: 'CURRENT' } },
       debts: { where: { status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] } } },
     },
     orderBy: { lastName: 'asc' },
   });
 
-  return renters.map((r) => ({
-    id: r.id,
-    firstName: r.firstName,
-    lastName: r.lastName,
-    fullName: `${r.firstName} ${r.lastName}`,
-    dni: r.dni,
-    email: r.email,
-    phone: r.phone,
-    address: r.address,
-    status: r.status,
-    hasPortalAccess: !!r.portalPasswordHash,
-    notes: r.notes,
-    activePropertyLeases: r.propertyLeases.map((l) => ({
-      id: l.id,
-      propertyCode: l.property.code,
-      rent: Number(l.currentRent),
-    })),
-    activeGarageLeasesCount: r.garageLeases.length,
-    totalPendingDebt: r.debts.reduce(
-      (sum, d) => sum + (Number(d.amount) - Number(d.paidAmount)),
-      0
-    ),
+  return renters.map((renter) => ({
+    id: renter.id,
+    firstName: renter.firstName,
+    lastName: renter.lastName,
+    fullName: `${renter.firstName} ${renter.lastName}`,
+    dni: renter.dni,
+    email: renter.email,
+    phone: renter.phone,
+    address: renter.address,
+    status: renter.status,
+    hasPortalAccess: !!renter.portalPasswordHash,
+    notes: renter.notes,
+    activePropertyLeases: renter.propertyLeases.map((lease) => ({ id: lease.id, propertyCode: lease.property.code, rent: Number(lease.currentRent) })),
+    activeGarageLeasesCount: renter.garageLeases.length,
+    totalPendingDebt: renter.debts.reduce((sum, debt) => sum + (Number(debt.amount) - Number(debt.paidAmount)), 0),
   }));
 }
 
 export async function saveRenterAction(data: {
-  id?: string;
-  firstName: string;
-  lastName: string;
-  dni: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  status?: 'ACTIVE' | 'INACTIVE';
-  notes?: string;
+  id?: string; firstName: string; lastName: string; dni: string; email?: string; phone?: string; address?: string; status?: 'ACTIVE' | 'INACTIVE'; notes?: string;
 }) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('renters', data.id ? 'update' : 'create');
   const prisma = await getTenantPrisma();
   const validated = RenterSchema.parse(data);
-
   const payload = {
-    firstName: validated.firstName,
-    lastName: validated.lastName,
-    dni: validated.dni,
-    email: validated.email || null,
-    phone: validated.phone || null,
-    address: validated.address || null,
-    status: validated.status,
-    notes: validated.notes,
+    firstName: validated.firstName.trim(), lastName: validated.lastName.trim(), dni: validated.dni.trim(),
+    email: validated.email?.trim().toLowerCase() || null, phone: validated.phone?.trim() || null,
+    address: validated.address?.trim() || null, status: validated.status, notes: validated.notes?.trim() || null,
   };
 
   const renter = data.id
     ? await prisma.propertyRenter.update({ where: { id: data.id }, data: payload })
     : await prisma.propertyRenter.create({ data: { ...payload, tenantId: tenant.id } });
 
-  await auditTenantAction({
-    tenantId: tenant.id,
-    actorUserId: session.userId,
-    action: data.id ? 'RENTER_UPDATED' : 'RENTER_CREATED',
-    entityType: 'PropertyRenter',
-    entityId: renter.id,
-    metadata: { dni: renter.dni },
-  });
-
+  await auditTenantAction({ tenantId: tenant.id, actorUserId: session.userId, action: data.id ? 'RENTER_UPDATED' : 'RENTER_CREATED', entityType: 'PropertyRenter', entityId: renter.id, metadata: { dni: renter.dni } });
   revalidatePath('/inquilinos');
   revalidatePath('/dashboard');
   return { success: true, renterId: renter.id };
 }
 
 export async function setRenterPortalPasswordAction(renterId: string, plainPassword: string) {
-  const { tenant, session } = await requireTenantAdmin();
+  const { tenant, session } = await requirePermission('renters', 'manage');
   const prisma = await getTenantPrisma();
-
-  if (!plainPassword || plainPassword.length < 8) {
-    throw new Error('La contraseña debe tener al menos 8 caracteres.');
-  }
-
+  if (!plainPassword || plainPassword.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres.');
   const renter = await prisma.propertyRenter.findFirst({ where: { id: renterId } });
   if (!renter) throw new Error('Inquilino no encontrado.');
 
-  const portalPasswordHash = await hashPassword(plainPassword);
-  await prisma.propertyRenter.update({
-    where: { id: renterId },
-    data: { portalPasswordHash },
-  });
-
-  await auditTenantAction({
-    tenantId: tenant.id,
-    actorUserId: session.userId,
-    action: 'RENTER_PORTAL_PASSWORD_CHANGED',
-    entityType: 'PropertyRenter',
-    entityId: renterId,
-  });
-
+  await prisma.propertyRenter.update({ where: { id: renterId }, data: { portalPasswordHash: await hashPassword(plainPassword) } });
+  await auditTenantAction({ tenantId: tenant.id, actorUserId: session.userId, action: 'RENTER_PORTAL_PASSWORD_CHANGED', entityType: 'PropertyRenter', entityId: renterId });
   revalidatePath('/inquilinos');
   return { success: true };
 }
